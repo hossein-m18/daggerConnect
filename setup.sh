@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# DaggerConnect Installer v2.0 (Optimized)
+# DaggerConnect Installer v2.2 (Corrected Profiles)
 
 # Colors
 RED='\033[0;31m'
@@ -22,13 +22,6 @@ BINARY_URL="$GITHUB_REPO/raw/main/DaggerConnect"
 
 # Banner
 show_banner() {
-    # Define colors
-    RED='\033[0;31m'
-    GREEN='\033[0;32m'
-    CYAN='\033[0;36m'
-    NC='\033[0m' # No Color
-
-    # Display the ASCII Art banner in a distinct color (e.g., CYAN or GREEN)
     echo -e "${CYAN}"
     echo "
   ██████  █████  ██████  ██████  ███████  ██████  ███
@@ -47,7 +40,7 @@ show_banner() {
       /____________________\
 "
     echo -e "${NC}"
-    echo -e "${GREEN}        DaggerConnect Installer v2.0 - Optimized Edition${NC}"
+    echo -e "${GREEN}        DaggerConnect Installer v2.2 - Corrected Edition${NC}"
     echo ""
 }
 
@@ -83,8 +76,8 @@ download_binary() {
         chmod +x "$INSTALL_DIR/DaggerConnect"
         echo -e "${GREEN}✓ DaggerConnect downloaded successfully${NC}"
 
-        if "$INSTALL_DIR/DaggerConnect" -version &>/dev/null; then
-            VERSION=$("$INSTALL_DIR/DaggerConnect" -version 2>&1 | grep -oP 'v\d+\.\d+\.\d+' || echo "unknown")
+        if "$INSTALL_DIR/DaggerConnect" -v &>/dev/null; then
+            VERSION=$("$INSTALL_DIR/DaggerConnect" -v 2>&1 | grep -oP 'v\d+\.\d+\.\d+' || echo "v1.1.3")
             echo -e "${CYAN}ℹ️  Version: $VERSION${NC}"
         fi
     else
@@ -94,7 +87,7 @@ download_binary() {
     fi
 }
 
-# Create systemd service (Uses mode-specific naming)
+# Create systemd service
 create_systemd_service() {
     local MODE=$1
     local SERVICE_NAME="DaggerConnect-${MODE}"
@@ -114,6 +107,7 @@ Restart=always
 RestartSec=3
 StandardOutput=journal
 StandardError=journal
+LimitNOFILE=1048576
 
 [Install]
 WantedBy=multi-user.target
@@ -137,10 +131,10 @@ install_server() {
 
     # Transport type
     echo -e "${YELLOW}Select Transport Type:${NC}"
-    echo "  1) TCP (tcpmux)"
-    echo "  2) KCP (kcpmux)"
-    echo "  3) WebSocket (wsmux)"
-    echo "  4) WebSocket Secure (wssmux)"
+    echo "  1) tcpmux  - TCP Multiplexing"
+    echo "  2) kcpmux  - KCP Multiplexing (UDP based)"
+    echo "  3) wsmux   - WebSocket"
+    echo "  4) wssmux  - WebSocket Secure (TLS)"
     echo ""
     read -p "Choice [1-4]: " transport_choice
     case $transport_choice in
@@ -151,10 +145,11 @@ install_server() {
         *) TRANSPORT="tcpmux" ;;
     esac
 
-    # Listen port
+    # Listen port (Tunnel Port)
     echo ""
-    read -p "Listen Port Example 4000: " LISTEN_PORT
-    LISTEN_PORT=${LISTEN_PORT:-4000}
+    echo -e "${CYAN}Tunnel Port: Port for communication between Server and Client${NC}"
+    read -p "Tunnel Port [2020]: " LISTEN_PORT
+    LISTEN_PORT=${LISTEN_PORT:-2020}
 
     # PSK
     echo ""
@@ -168,15 +163,15 @@ install_server() {
         fi
     done
 
-    # Profile
+    # Profile (Corrected profiles)
     echo ""
     echo -e "${YELLOW}Select Performance Profile:${NC}"
-    echo "  1) balanced (recommended)"
-    echo "  2) aggressive"
-    echo "  3) latency"
-    echo "  4) cpu-efficient"
+    echo "  1) balanced      - Standard balanced performance"
+    echo "  2) aggressive    - High speed, aggressive settings"
+    echo "  3) latency       - Optimized for low latency"
+    echo "  4) cpu-efficient - Low CPU usage"
     echo ""
-    read -p "Choice [1-4]: " profile_choice
+    read -p "Choice [1-5]: " profile_choice
     case $profile_choice in
         1) PROFILE="balanced" ;;
         2) PROFILE="aggressive" ;;
@@ -190,7 +185,7 @@ install_server() {
     KEY_FILE=""
     if [ "$TRANSPORT" == "wssmux" ]; then
         echo ""
-        echo -e "${YELLOW}TLS Configuration:${NC}"
+        echo -e "${YELLOW}TLS Configuration (Required for wssmux):${NC}"
         read -p "Certificate file path: " CERT_FILE
         read -p "Private key file path: " KEY_FILE
         if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then
@@ -200,7 +195,7 @@ install_server() {
         fi
     fi
 
-    # Port mappings (simplified - only ports)
+    # Port mappings
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════${NC}"
     echo -e "${CYAN}      PORT MAPPINGS${NC}"
@@ -212,38 +207,45 @@ install_server() {
         echo -e "${YELLOW}Add Port Mapping #$((COUNT+1))${NC}"
 
         # Protocol
-        read -p "Protocol (tcp/udp) [tcp]: " PROTO
-        PROTO=${PROTO:-tcp}
+        echo "Protocol:"
+        echo "  1) tcp"
+        echo "  2) udp"
+        echo "  3) both (tcp + udp)"
+        read -p "Choice [1-3]: " proto_choice
 
-        # Bind port (simplified to only ask for port)
-        read -p "Bind Port (e.g., 2020): " BIND_PORT
-        if [ -z "$BIND_PORT" ]; then
-            echo -e "${RED}Port cannot be empty!${NC}"
-            continue
-        fi
+        while true; do
+            read -p "Port Script (required): " BIND_PORT
+            if [[ -n "$BIND_PORT" ]] && [[ "$BIND_PORT" =~ ^[0-9]+$ ]] && [ "$BIND_PORT" -ge 1 ] && [ "$BIND_PORT" -le 65535 ]; then
+                break
+            else
+                echo -e "${RED}⚠ Invalid port! Enter a number between 1-65535${NC}"
+            fi
+        done
 
-        # Target port
-        read -p "Target Port (e.g., 22): " TARGET_PORT
-        if [ -z "$TARGET_PORT" ]; then
-            echo -e "${RED}Port cannot be empty!${NC}"
-            continue
-        fi
-
-        # Build mapping with 0.0.0.0 for bind and 127.0.0.1 for target
+        # Build mappings
         BIND="0.0.0.0:${BIND_PORT}"
-        TARGET="127.0.0.1:${TARGET_PORT}"
+        TARGET="0.0.0.0:${BIND_PORT}"
 
-        if [ $COUNT -eq 0 ]; then
-            MAPPINGS="  - type: \"$PROTO\"\n    bind: \"$BIND\"\n    target: \"$TARGET\""
-        else
-            MAPPINGS="$MAPPINGS\n  - type: \"$PROTO\"\n    bind: \"$BIND\"\n    target: \"$TARGET\""
-        fi
+        case $proto_choice in
+            1)
+                MAPPINGS="${MAPPINGS}  - type: tcp\n    bind: \"${BIND}\"\n    target: \"${TARGET}\"\n"
+                ;;
+            2)
+                MAPPINGS="${MAPPINGS}  - type: udp\n    bind: \"${BIND}\"\n    target: \"${TARGET}\"\n"
+                ;;
+            3)
+                MAPPINGS="${MAPPINGS}  - type: tcp\n    bind: \"${BIND}\"\n    target: \"${TARGET}\"\n"
+                MAPPINGS="${MAPPINGS}  - type: udp\n    bind: \"${BIND}\"\n    target: \"${TARGET}\"\n"
+                ;;
+            *)
+                echo -e "${RED}Invalid choice, skipping...${NC}"
+                continue
+                ;;
+        esac
+
         COUNT=$((COUNT+1))
-
-        echo -e "${GREEN}✓ Mapping added: $PROTO $BIND -> $TARGET${NC}"
-
-        read -p "Add another mapping? [y/N]: " MORE
-        [[ ! $MORE =~ ^[Yy]$ ]] && break
+        read -p "Add another port mapping? (y/n) [n]: " add_more
+        [[ "$add_more" =~ ^[Yy] ]] || break
     done
 
     # Verbose
@@ -251,7 +253,7 @@ install_server() {
     read -p "Enable verbose logging? [y/N]: " VERBOSE
     [[ $VERBOSE =~ ^[Yy]$ ]] && VERBOSE="true" || VERBOSE="false"
 
-    # Write config
+    # Write config (Profile values will be applied by the Go application)
     CONFIG_FILE="$CONFIG_DIR/server.yaml"
     cat > "$CONFIG_FILE" << EOF
 mode: "server"
@@ -275,45 +277,46 @@ EOF
     # Add mappings
     echo -e "maps:\n$MAPPINGS\n" >> "$CONFIG_FILE"
 
-    # Add SMUX, KCP, Advanced settings (Using the consolidated settings from our previous chat)
+    # Add default settings (will be overridden by profile in Go code)
     cat >> "$CONFIG_FILE" << 'EOF'
 smux:
-  keepalive: 10
-  max_recv: 16777216
-  max_stream: 16777216
+  keepalive: 8
+  max_recv: 8388608
+  max_stream: 8388608
   frame_size: 32768
   version: 2
-  mux_con: 10
 
 kcp:
-  datashard: 10
-  parityshard: 3
-  acknodelay: false
+  nodelay: 1
+  interval: 10
+  resend: 2
+  nc: 1
+  sndwnd: 1024
+  rcvwnd: 1024
+  mtu: 1400
 
 advanced:
   tcp_nodelay: true
-  tcp_keepalive: 30
-  tcp_read_buffer: 16777216        # 16MB
-  tcp_write_buffer: 16777216       # 16MB
-  websocket_read_buffer: 262144    # 256KB
-  websocket_write_buffer: 262144   # 256KB
+  tcp_keepalive: 15
+  tcp_read_buffer: 8388608
+  tcp_write_buffer: 8388608
+  websocket_read_buffer: 262144
+  websocket_write_buffer: 262144
   websocket_compression: false
-  cleanup_interval: 60
-  session_timeout: 180
-  connection_timeout: 600
-  stream_timeout: 21600
-  stream_idle_timeout: 600
-  max_connections: 0
-  max_udp_flows: 10000
-  udp_flow_timeout: 600
+  cleanup_interval: 3
+  session_timeout: 30
+  connection_timeout: 60
+  stream_timeout: 120
+  max_connections: 2000
+  max_udp_flows: 1000
+  udp_flow_timeout: 300
+  udp_buffer_size: 4194304
 
-max_sessions: 0
 heartbeat: 10
 EOF
 
     create_systemd_service "server"
 
-    # Start and enable the mode-specific service
     systemctl start DaggerConnect-server
     systemctl enable DaggerConnect-server
 
@@ -321,6 +324,12 @@ EOF
     echo -e "${GREEN}═══════════════════════════════════════${NC}"
     echo -e "${GREEN}   ✓ Server installation complete!${NC}"
     echo -e "${GREEN}═══════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${CYAN}Important Info:${NC}"
+    echo "  Tunnel Port: ${GREEN}${LISTEN_PORT}${NC}"
+    echo "  PSK: ${GREEN}${PSK}${NC}"
+    echo "  Transport: ${GREEN}${TRANSPORT}${NC}"
+    echo "  Profile: ${GREEN}${PROFILE}${NC}"
     echo ""
     echo "  View logs: journalctl -u DaggerConnect-server -f"
     echo ""
@@ -351,15 +360,15 @@ install_client() {
         fi
     done
 
-    # Profile
+    # Profile (Corrected profiles)
     echo ""
     echo -e "${YELLOW}Select Performance Profile:${NC}"
-    echo "  1) balanced (recommended)"
-    echo "  2) aggressive"
-    echo "  3) latency"
-    echo "  4) cpu-efficient"
+    echo "  1) balanced      - Standard balanced performance"
+    echo "  2) aggressive    - High speed, aggressive settings"
+    echo "  3) latency       - Optimized for low latency"
+    echo "  4) cpu-efficient - Low CPU usage"
     echo ""
-    read -p "Choice [1-4]: " profile_choice
+    read -p "Choice [1-5]: " profile_choice
     case $profile_choice in
         1) PROFILE="balanced" ;;
         2) PROFILE="aggressive" ;;
@@ -380,10 +389,10 @@ install_client() {
         echo -e "${YELLOW}Add Connection Path #$((COUNT+1))${NC}"
 
         echo "Select Transport Type:"
-        echo "  1) TCP (tcpmux)"
-        echo "  2) KCP (kcpmux)"
-        echo "  3) WebSocket (wsmux)"
-        echo "  4) WebSocket Secure (wssmux)"
+        echo "  1) tcpmux  - TCP Multiplexing"
+        echo "  2) kcpmux  - KCP Multiplexing (UDP based)"
+        echo "  3) wsmux   - WebSocket"
+        echo "  4) wssmux  - WebSocket Secure (TLS)"
         echo ""
         read -p "Choice [1-4]: " transport_choice
         case $transport_choice in
@@ -394,7 +403,7 @@ install_client() {
             *) T="tcpmux" ;;
         esac
 
-        read -p "Server address With Port Tunnel (e.g., 1.2.3.4:4000): " ADDR
+        read -p "Server address with Tunnel Port (e.g., 1.2.3.4:2020): " ADDR
         if [ -z "$ADDR" ]; then
             echo -e "${RED}Address cannot be empty!${NC}"
             continue
@@ -403,14 +412,17 @@ install_client() {
         read -p "Connection pool size [2]: " POOL
         POOL=${POOL:-2}
 
+        read -p "Enable aggressive pool? [y/N]: " AGG
+        [[ $AGG =~ ^[Yy]$ ]] && AGG_POOL="true" || AGG_POOL="false"
+
         if [ $COUNT -eq 0 ]; then
-            PATHS="  - transport: \"$T\"\n    addr: \"$ADDR\"\n    connection_pool: $POOL\n    aggressive_pool: false\n    retry_interval: 3\n    dial_timeout: 10"
+            PATHS="  - transport: \"$T\"\n    addr: \"$ADDR\"\n    connection_pool: $POOL\n    aggressive_pool: $AGG_POOL\n    retry_interval: 3\n    dial_timeout: 10"
         else
-            PATHS="$PATHS\n  - transport: \"$T\"\n    addr: \"$ADDR\"\n    connection_pool: $POOL\n    aggressive_pool: false\n    retry_interval: 3\n    dial_timeout: 10"
+            PATHS="$PATHS\n  - transport: \"$T\"\n    addr: \"$ADDR\"\n    connection_pool: $POOL\n    aggressive_pool: $AGG_POOL\n    retry_interval: 3\n    dial_timeout: 10"
         fi
         COUNT=$((COUNT+1))
 
-        echo -e "${GREEN}✓ Path added: $T -> $ADDR (pool: $POOL)${NC}"
+        echo -e "${GREEN}✓ Path added: $T -> $ADDR (pool: $POOL, aggressive: $AGG_POOL)${NC}"
 
         read -p "Add another path? [y/N]: " MORE
         [[ ! $MORE =~ ^[Yy]$ ]] && break
@@ -433,41 +445,43 @@ paths:
 $PATHS
 
 smux:
-  keepalive: 10
-  max_recv: 16777216
-  max_stream: 16777216
+  keepalive: 8
+  max_recv: 8388608
+  max_stream: 8388608
   frame_size: 32768
   version: 2
-  mux_con: 10
 
 kcp:
-  datashard: 10
-  parityshard: 3
-  acknodelay: false
+  nodelay: 1
+  interval: 10
+  resend: 2
+  nc: 1
+  sndwnd: 1024
+  rcvwnd: 1024
+  mtu: 1400
 
 advanced:
   tcp_nodelay: true
-  tcp_keepalive: 30
-  tcp_read_buffer: 16777216        # 16MB
-  tcp_write_buffer: 16777216       # 16MB
-  websocket_read_buffer: 262144    # 256KB
-  websocket_write_buffer: 262144   # 256KB
+  tcp_keepalive: 15
+  tcp_read_buffer: 8388608
+  tcp_write_buffer: 8388608
+  websocket_read_buffer: 262144
+  websocket_write_buffer: 262144
   websocket_compression: false
-  cleanup_interval: 60
-  session_timeout: 180
-  connection_timeout: 600
-  stream_timeout: 21600
-  stream_idle_timeout: 600
-  max_connections: 0
-  max_udp_flows: 10000
-  udp_flow_timeout: 600
+  cleanup_interval: 3
+  session_timeout: 30
+  connection_timeout: 60
+  stream_timeout: 120
+  max_connections: 2000
+  max_udp_flows: 1000
+  udp_flow_timeout: 300
+  udp_buffer_size: 4194304
 
 heartbeat: 10
 EOF
 
     create_systemd_service "client"
 
-    # Start and enable the mode-specific service
     systemctl start DaggerConnect-client
     systemctl enable DaggerConnect-client
 
@@ -476,7 +490,6 @@ EOF
     echo -e "${GREEN}   ✓ Client installation complete!${NC}"
     echo -e "${GREEN}═══════════════════════════════════════${NC}"
     echo ""
-    echo -e "${CYAN}Next steps (already started):${NC}"
     echo "  View logs: journalctl -u DaggerConnect-client -f"
     echo ""
     read -p "Press Enter to return to menu..."
@@ -484,7 +497,7 @@ EOF
 }
 
 # ---------------------------
-# Consolidated Service Management (New Function)
+# Service Management
 # ---------------------------
 service_management() {
     local MODE=$1
@@ -501,13 +514,13 @@ service_management() {
     echo "  2) Stop ${MODE^}"
     echo "  3) Restart ${MODE^}"
     echo "  4) ${MODE^} Status"
-    echo "  5) View ${MODE^} Logs"
+    echo "  5) View ${MODE^} Logs (Live)"
     echo "  6) Enable ${MODE^} Auto-start"
     echo "  7) Disable ${MODE^} Auto-start"
     echo ""
     echo "  8) View ${MODE^} Config"
     echo "  9) Edit ${MODE^} Config"
-    echo "  10) Delete ${MODE^} Config"
+    echo "  10) Delete ${MODE^} Config & Service"
     echo ""
     echo "  0) Back to Settings"
     echo ""
@@ -517,7 +530,7 @@ service_management() {
         1) systemctl start "$SERVICE_NAME"; echo -e "${GREEN}✓ ${MODE^} started${NC}"; sleep 2; service_management "$MODE" ;;
         2) systemctl stop "$SERVICE_NAME"; echo -e "${GREEN}✓ ${MODE^} stopped${NC}"; sleep 2; service_management "$MODE" ;;
         3) systemctl restart "$SERVICE_NAME"; echo -e "${GREEN}✓ ${MODE^} restarted${NC}"; sleep 2; service_management "$MODE" ;;
-        4) systemctl status "$SERVICE_NAME"; read -p "Press Enter to continue..."; service_management "$MODE" ;;
+        4) systemctl status "$SERVICE_NAME" --no-pager; read -p "Press Enter to continue..."; service_management "$MODE" ;;
         5) journalctl -u "$SERVICE_NAME" -f ;;
         6) systemctl enable "$SERVICE_NAME"; echo -e "${GREEN}✓ Auto-start enabled${NC}"; sleep 2; service_management "$MODE" ;;
         7) systemctl disable "$SERVICE_NAME"; echo -e "${GREEN}✓ Auto-start disabled${NC}"; sleep 2; service_management "$MODE" ;;
@@ -533,6 +546,13 @@ service_management() {
         9)
             if [ -f "$CONFIG_FILE" ]; then
                 ${EDITOR:-nano} "$CONFIG_FILE"
+                echo ""
+                read -p "Restart service to apply changes? [y/N]: " restart
+                if [[ $restart =~ ^[Yy]$ ]]; then
+                    systemctl restart "$SERVICE_NAME"
+                    echo -e "${GREEN}✓ Service restarted${NC}"
+                    sleep 2
+                fi
             else
                 echo -e "${RED}${MODE^} config not found${NC}"
                 sleep 2
@@ -558,7 +578,7 @@ service_management() {
 }
 
 # ---------------------------
-# Settings Menu (New Function)
+# Settings Menu
 # ---------------------------
 settings_menu() {
     show_banner
@@ -645,7 +665,7 @@ main_menu() {
     case $choice in
         1) install_server ;;
         2) install_client ;;
-        3) settings_menu ;; # New Settings Menu
+        3) settings_menu ;;
         4) uninstall_DaggerConnect ;;
         0) echo -e "${GREEN}Goodbye!${NC}"; exit 0 ;;
         *) echo -e "${RED}Invalid option${NC}"; sleep 2; main_menu ;;
