@@ -35,7 +35,7 @@ show_banner() {
       /____________________\
 "
     echo -e "${NC}"
-    echo -e "${GREEN}        DaggerConnect Installer v2.2 - Corrected Edition${NC}"
+    echo -e "${GREEN}        DaggerConnect Installer v2.3${NC}"
     echo ""
 }
 
@@ -60,9 +60,23 @@ install_dependencies() {
     echo -e "${GREEN}✓ Dependencies installed${NC}"
 }
 
+get_current_version() {
+    if [ -f "$INSTALL_DIR/DaggerConnect" ]; then
+        VERSION=$("$INSTALL_DIR/DaggerConnect" -v 2>&1 | grep -oP 'v\d+\.\d+\.\d+' || echo "unknown")
+        echo "$VERSION"
+    else
+        echo "not-installed"
+    fi
+}
+
 download_binary() {
     echo -e "${YELLOW}⬇️  Downloading DaggerConnect binary...${NC}"
     mkdir -p "$INSTALL_DIR"
+
+    # Backup old binary if exists
+    if [ -f "$INSTALL_DIR/DaggerConnect" ]; then
+        mv "$INSTALL_DIR/DaggerConnect" "$INSTALL_DIR/DaggerConnect.backup"
+    fi
 
     if wget -q --show-progress "$BINARY_URL" -O "$INSTALL_DIR/DaggerConnect"; then
         chmod +x "$INSTALL_DIR/DaggerConnect"
@@ -72,11 +86,91 @@ download_binary() {
             VERSION=$("$INSTALL_DIR/DaggerConnect" -v 2>&1 | grep -oP 'v\d+\.\d+\.\d+' || echo "v1.1.3")
             echo -e "${CYAN}ℹ️  Version: $VERSION${NC}"
         fi
+
+        # Remove backup if download successful
+        rm -f "$INSTALL_DIR/DaggerConnect.backup"
     else
         echo -e "${RED}✖ Failed to download DaggerConnect binary${NC}"
         echo -e "${YELLOW}Please check your internet connection and try again${NC}"
+
+        # Restore backup if download failed
+        if [ -f "$INSTALL_DIR/DaggerConnect.backup" ]; then
+            mv "$INSTALL_DIR/DaggerConnect.backup" "$INSTALL_DIR/DaggerConnect"
+            echo -e "${YELLOW}⚠️  Restored previous version${NC}"
+        fi
         exit 1
     fi
+}
+
+update_binary() {
+    show_banner
+    echo -e "${CYAN}═══════════════════════════════════════${NC}"
+    echo -e "${CYAN}      UPDATE DaggerConnect CORE${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════${NC}"
+    echo ""
+
+    CURRENT_VERSION=$(get_current_version)
+
+    if [ "$CURRENT_VERSION" == "not-installed" ]; then
+        echo -e "${RED}❌ DaggerConnect is not installed yet${NC}"
+        echo ""
+        read -p "Press Enter to return to menu..."
+        main_menu
+        return
+    fi
+
+    echo -e "${CYAN}Current Version: ${GREEN}$CURRENT_VERSION${NC}"
+    echo ""
+    echo -e "${YELLOW}⚠️  This will:${NC}"
+    echo "  - Stop all running services"
+    echo "  - Download latest version from GitHub"
+    echo "  - Restart services automatically"
+    echo ""
+    read -p "Continue with update? [y/N]: " confirm
+
+    if [[ ! $confirm =~ ^[Yy]$ ]]; then
+        main_menu
+        return
+    fi
+
+    echo ""
+    echo -e "${YELLOW}Stopping services...${NC}"
+    systemctl stop DaggerConnect-server 2>/dev/null
+    systemctl stop DaggerConnect-client 2>/dev/null
+    sleep 2
+
+    download_binary
+
+    NEW_VERSION=$(get_current_version)
+
+    echo ""
+    echo -e "${GREEN}═══════════════════════════════════════${NC}"
+    echo -e "${GREEN}   ✓ Update completed successfully!${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════${NC}"
+    echo ""
+    echo -e "  Previous Version: ${YELLOW}$CURRENT_VERSION${NC}"
+    echo -e "  Current Version:  ${GREEN}$NEW_VERSION${NC}"
+    echo ""
+
+    # Ask to restart services
+    if systemctl is-enabled DaggerConnect-server &>/dev/null || systemctl is-enabled DaggerConnect-client &>/dev/null; then
+        read -p "Restart services now? [Y/n]: " restart
+        if [[ ! $restart =~ ^[Nn]$ ]]; then
+            echo ""
+            if systemctl is-enabled DaggerConnect-server &>/dev/null; then
+                systemctl start DaggerConnect-server
+                echo -e "${GREEN}✓ Server restarted${NC}"
+            fi
+            if systemctl is-enabled DaggerConnect-client &>/dev/null; then
+                systemctl start DaggerConnect-client
+                echo -e "${GREEN}✓ Client restarted${NC}"
+            fi
+        fi
+    fi
+
+    echo ""
+    read -p "Press Enter to return to menu..."
+    main_menu
 }
 
 create_systemd_service() {
@@ -301,10 +395,10 @@ EOF
     echo -e "${GREEN}═══════════════════════════════════════${NC}"
     echo ""
     echo -e "${CYAN}Important Info:${NC}"
-    echo "  Tunnel Port: ${GREEN}${LISTEN_PORT}${NC}"
-    echo "  PSK: ${GREEN}${PSK}${NC}"
-    echo "  Transport: ${GREEN}${TRANSPORT}${NC}"
-    echo "  Profile: ${GREEN}${PROFILE}${NC}"
+    echo -e "  Tunnel Port: ${GREEN} ${LISTEN_PORT} ${NC}"
+    echo -e "  PSK: ${GREEN} ${PSK} ${NC}"
+    echo -e "  Transport: ${GREEN} ${TRANSPORT} ${NC}"
+    echo -e "  Profile: ${GREEN} ${PROFILE} ${NC}"
     echo ""
     echo "  View logs: journalctl -u DaggerConnect-server -f"
     echo ""
@@ -406,7 +500,6 @@ install_client() {
 
    CONFIG_FILE="$CONFIG_DIR/client.yaml"
 
-   # Write the initial part of the config
    cat > "$CONFIG_FILE" << EOF
 mode: "client"
 psk: "${PSK}"
@@ -416,12 +509,10 @@ verbose: ${VERBOSE}
 paths:
 EOF
 
-   # Append each path entry
    for path_entry in "${PATH_ENTRIES[@]}"; do
        printf "%s\n" "$path_entry" >> "$CONFIG_FILE"
    done
 
-   # Append the rest of the configuration
    cat >> "$CONFIG_FILE" << 'EOF'
 
 smux:
@@ -617,6 +708,14 @@ uninstall_DaggerConnect() {
 
 main_menu() {
     show_banner
+
+    # Show current version if installed
+    CURRENT_VER=$(get_current_version)
+    if [ "$CURRENT_VER" != "not-installed" ]; then
+        echo -e "${CYAN}Current Version: ${GREEN}$CURRENT_VER${NC}"
+        echo ""
+    fi
+
     echo -e "${CYAN}═══════════════════════════════════════${NC}"
     echo -e "${CYAN}            MAIN MENU${NC}"
     echo -e "${CYAN}═══════════════════════════════════════${NC}"
@@ -624,7 +723,8 @@ main_menu() {
     echo "  1) Install Server"
     echo "  2) Install Client"
     echo "  3) Settings (Manage Services & Configs)"
-    echo "  4) Uninstall DaggerConnect"
+    echo "  4) Update Core (Re-download Binary)"
+    echo "  5) Uninstall DaggerConnect"
     echo ""
     echo "  0) Exit"
     echo ""
@@ -634,7 +734,8 @@ main_menu() {
         1) install_server ;;
         2) install_client ;;
         3) settings_menu ;;
-        4) uninstall_DaggerConnect ;;
+        4) update_binary ;;
+        5) uninstall_DaggerConnect ;;
         0) echo -e "${GREEN}Goodbye!${NC}"; exit 0 ;;
         *) echo -e "${RED}Invalid option${NC}"; sleep 2; main_menu ;;
     esac
