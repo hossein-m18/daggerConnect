@@ -14,11 +14,10 @@ CONFIG_DIR="/etc/DaggerConnect"
 SYSTEMD_DIR="/etc/systemd/system"
 
 GITHUB_REPO="https://github.com/itsFLoKi/DaggerConnect"
-BINARY_URL="https://github.com/itsFLoKi/DaggerConnect/releases/download/v1.0/DaggerConnect"
+LATEST_RELEASE_API="https://api.github.com/repos/itsFLoKi/DaggerConnect/releases/latest"
 
 show_banner() {
     echo -e "${CYAN}"
-    echo -e "${NC}"
     echo -e "${GREEN}        DaggerConnect Installer${NC}"
     echo ""
 }
@@ -57,6 +56,18 @@ download_binary() {
     echo -e "${YELLOW}⬇️  Downloading DaggerConnect binary...${NC}"
     mkdir -p "$INSTALL_DIR"
 
+    echo -e "${CYAN}🔍 Fetching latest release info...${NC}"
+    LATEST_VERSION=$(curl -s "$LATEST_RELEASE_API" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+
+    if [ -z "$LATEST_VERSION" ]; then
+        echo -e "${YELLOW}⚠️  Could not fetch latest version, using v1.0${NC}"
+        LATEST_VERSION="v1.0"
+    fi
+
+    BINARY_URL="https://github.com/itsFLoKi/DaggerConnect/releases/download/${LATEST_VERSION}/DaggerConnect"
+
+    echo -e "${CYAN}📦 Latest version: ${GREEN}${LATEST_VERSION}${NC}"
+
     if [ -f "$INSTALL_DIR/DaggerConnect" ]; then
         mv "$INSTALL_DIR/DaggerConnect" "$INSTALL_DIR/DaggerConnect.backup"
     fi
@@ -66,8 +77,8 @@ download_binary() {
         echo -e "${GREEN}✓ DaggerConnect downloaded successfully${NC}"
 
         if "$INSTALL_DIR/DaggerConnect" -v &>/dev/null; then
-            VERSION=$("$INSTALL_DIR/DaggerConnect" -v 2>&1 | grep -oP 'v\d+\.\d+' || echo "v1.0")
-            echo -e "${CYAN}ℹ️  Version: $VERSION${NC}"
+            VERSION=$("$INSTALL_DIR/DaggerConnect" -v 2>&1 | grep -oP 'v\d+\.\d+' || echo "$LATEST_VERSION")
+            echo -e "${CYAN}ℹ️  Installed version: $VERSION${NC}"
         fi
 
         rm -f "$INSTALL_DIR/DaggerConnect.backup"
@@ -279,22 +290,16 @@ install_server() {
         read -p "Choice [1-3]: " proto_choice
 
         while true; do
-            read -p "Port Script (required): " BIND_PORT
-            if [[ -n "$BIND_PORT" ]] && [[ "$BIND_PORT" =~ ^[0-9]+$ ]] && [ "$BIND_PORT" -ge 1 ] && [ "$BIND_PORT" -le 65535 ]; then
+            read -p "Port Script (required): " SCRIPT_PORT
+            if [[ -n "$SCRIPT_PORT" ]] && [[ "$SCRIPT_PORT" =~ ^[0-9]+$ ]] && [ "$SCRIPT_PORT" -ge 1 ] && [ "$SCRIPT_PORT" -le 65535 ]; then
                 break
             else
                 echo -e "${RED}⚠ Invalid port! Enter a number between 1-65535${NC}"
             fi
         done
 
-        read -p "Target address (default: 127.0.0.1): " TARGET_ADDR
-        TARGET_ADDR=${TARGET_ADDR:-127.0.0.1}
-
-        read -p "Target port (default: same as bind port): " TARGET_PORT
-        TARGET_PORT=${TARGET_PORT:-$BIND_PORT}
-
-        BIND="0.0.0.0:${BIND_PORT}"
-        TARGET="${TARGET_ADDR}:${TARGET_PORT}"
+        BIND="0.0.0.0:${SCRIPT_PORT}"
+        TARGET="127.0.0.1:${SCRIPT_PORT}"
 
         case $proto_choice in
             1)
