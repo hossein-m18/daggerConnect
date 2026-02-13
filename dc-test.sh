@@ -7,7 +7,7 @@
 # ║  ~19 تست هوشمند به جای 18 هزار ترکیب                           ║
 # ╚══════════════════════════════════════════════════════════════════╝
 
-set -euo pipefail
+# No set -e: we handle errors explicitly
 
 # ──────────────────── Colors ────────────────────
 RED='\033[0;31m'
@@ -208,7 +208,7 @@ parse_conf() {
     local section=""
     while IFS= read -r line || [[ -n "$line" ]]; do
         line=$(echo "$line" | sed 's/#.*//' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
-        [[ -z "$line" ]] && continue
+        if [[ -z "$line" ]]; then continue; fi
 
         if [[ "$line" =~ ^\[(.+)\]$ ]]; then
             section="${BASH_REMATCH[1]}"
@@ -262,7 +262,7 @@ parse_conf() {
                 found=true; break
             fi
         done
-        $found || { echo -e "${RED}❌ سرور ایران '$FILTER_IRAN' پیدا نشد!${NC}"; exit 1; }
+        if ! $found; then echo -e "${RED}❌ سرور ایران '$FILTER_IRAN' پیدا نشد!${NC}"; exit 1; fi
     fi
     if [[ -n "$FILTER_KHAREJ" ]]; then
         local found=false
@@ -273,11 +273,11 @@ parse_conf() {
                 found=true; break
             fi
         done
-        $found || { echo -e "${RED}❌ سرور خارج '$FILTER_KHAREJ' پیدا نشد!${NC}"; exit 1; }
+        if ! $found; then echo -e "${RED}❌ سرور خارج '$FILTER_KHAREJ' پیدا نشد!${NC}"; exit 1; fi
     fi
 
-    [[ ${#IRAN_NAMES[@]} -eq 0 ]] && { echo -e "${RED}❌ هیچ سرور ایرانی تعریف نشده!${NC}"; exit 1; }
-    [[ ${#KHAREJ_NAMES[@]} -eq 0 ]] && { echo -e "${RED}❌ هیچ سرور خارجی تعریف نشده!${NC}"; exit 1; }
+    if [[ ${#IRAN_NAMES[@]} -eq 0 ]]; then echo -e "${RED}❌ هیچ سرور ایرانی تعریف نشده!${NC}"; exit 1; fi
+    if [[ ${#KHAREJ_NAMES[@]} -eq 0 ]]; then echo -e "${RED}❌ هیچ سرور خارجی تعریف نشده!${NC}"; exit 1; fi
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -634,7 +634,7 @@ wait_for_tunnel() {
 
         if [[ "$srv" == "active" && "$cli" == "active" ]]; then
             local ok=$(run_ssh "$kh_ip" "$kh_p" "$kh_u" "$kh_a" "journalctl -u DaggerConnect-client -n 20 --no-pager 2>/dev/null | grep -ci 'session added\|connected\|established' || echo 0")
-            [[ "$ok" -gt 0 ]] && return 0
+            if [[ "$ok" -gt 0 ]]; then return 0; fi
         fi
         sleep 1; w=$((w+1))
     done
@@ -644,14 +644,14 @@ wait_for_tunnel() {
 measure_latency() {
     local ir_ip="$1" ir_p="$2" ir_u="$3" ir_a="$4" kh_ip="$5"
     local lat=$(run_ssh "$ir_ip" "$ir_p" "$ir_u" "$ir_a" "ping -c 3 -W 3 ${kh_ip} 2>/dev/null | tail -1 | awk -F'/' '{print \$5}'")
-    [[ -n "$lat" ]] && echo "${lat}ms" || echo "-"
+    if [[ -n "$lat" && "$lat" != "" ]]; then echo "${lat}ms"; else echo "-"; fi
 }
 
 measure_bandwidth() {
     local ir_ip="$1" ir_p="$2" ir_u="$3" ir_a="$4"
     local kh_ip="$5" kh_p="$6" kh_u="$7" kh_a="$8"
 
-    $QUICK_MODE && { echo "-"; return; }
+    if $QUICK_MODE; then echo "-"; return; fi
 
     # Start iperf server on kharej
     run_ssh "$kh_ip" "$kh_p" "$kh_u" "$kh_a" "pkill -f 'iperf3 -s' 2>/dev/null; sleep 0.5; iperf3 -s -p 5201 -D 2>/dev/null"
@@ -664,7 +664,7 @@ measure_bandwidth() {
     ")
 
     run_ssh "$kh_ip" "$kh_p" "$kh_u" "$kh_a" "pkill -f 'iperf3 -s' 2>/dev/null"
-    [[ -n "$bw" && "$bw" != "-" ]] && echo "${bw} Mbps" || echo "-"
+    if [[ -n "$bw" && "$bw" != "-" ]]; then echo "${bw} Mbps"; else echo "-"; fi
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -734,7 +734,7 @@ run_scenario() {
 # ══════════════════════════════════════════════════════════════
 
 print_results() {
-    [[ ${#RESULTS[@]} -eq 0 ]] && { echo -e "${YELLOW}No results.${NC}"; return; }
+    if [[ ${#RESULTS[@]} -eq 0 ]]; then echo -e "${YELLOW}No results.${NC}"; return; fi
 
     echo ""
     echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════════════════════════════════╗${NC}"
