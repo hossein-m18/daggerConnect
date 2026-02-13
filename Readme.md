@@ -4,9 +4,7 @@
 
 **ریورس تانل قدرتمند با HTTP Mimicry و Traffic Obfuscation**
 
-
 **[![BUY LICENSE WITH BOT | خرید لایسنس از ربات]](https://t.me/DaggerConnectBot)**
-
 
 [ویژگی‌ها](#-ویژگیها) • [نصب سریع](#-نصب-سریع) • [مثال‌ها](#-مثالها) • [پیکربندی](#-پیکربندی-پیشرفته)
 
@@ -94,24 +92,24 @@
 
 ### 🌐 پروتکل‌های پشتیبانی شده
 
-| پروتکل | پورت | امنیت | DPI Bypass | کاربرد |
-|--------|------|-------|------------|--------|
-| **TCP** (tcpmux) | Any | ✅ AES-GCM | ⭐⭐ | استفاده عمومی، پایدار |
-| **KCP** (kcpmux) | UDP | ✅ AES | ⭐⭐⭐ | شبکه‌های پرافت، سرعت بالا |
-| **WebSocket** (wsmux) | 80 | ✅ AES-GCM | ⭐⭐⭐ | عبور از فایروال HTTP |
-| **WSS** (wssmux) | 443 | ✅ TLS+AES | ⭐⭐⭐⭐ | امنیت بالا + Firewall |
-| **HTTP** (httpmux) | 80 | ✅ AES-GCM | ⭐⭐⭐⭐⭐ | **DPI Bypass کامل** 🆕 |
-| **HTTPS** (httpsmux) | 443 | ✅ TLS+AES | ⭐⭐⭐⭐⭐ | **بهترین - DPI + TLS** 🆕 |
+| پروتکل                | پورت | امنیت      | DPI Bypass | کاربرد                    |
+| --------------------- | ---- | ---------- | ---------- | ------------------------- |
+| **TCP** (tcpmux)      | Any  | ✅ AES-GCM | ⭐⭐       | استفاده عمومی، پایدار     |
+| **KCP** (kcpmux)      | UDP  | ✅ AES     | ⭐⭐⭐     | شبکه‌های پرافت، سرعت بالا |
+| **WebSocket** (wsmux) | 80   | ✅ AES-GCM | ⭐⭐⭐     | عبور از فایروال HTTP      |
+| **WSS** (wssmux)      | 443  | ✅ TLS+AES | ⭐⭐⭐⭐   | امنیت بالا + Firewall     |
+| **HTTP** (httpmux)    | 80   | ✅ AES-GCM | ⭐⭐⭐⭐⭐ | **DPI Bypass کامل** 🆕    |
+| **HTTPS** (httpsmux)  | 443  | ✅ TLS+AES | ⭐⭐⭐⭐⭐ | **بهترین - DPI + TLS** 🆕 |
 
 ### 🎨 پروفایل‌های عملکرد
 
-| پروفایل | تاخیر | CPU | پهنای باند | کاربرد |
-|---------|-------|-----|-----------|--------|
-| **balanced** | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | استفاده روزمره |
-| **aggressive** | ⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ | انتقال فایل، سرعت بالا |
-| **latency** | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐ | بازی، VoIP |
-| **cpu-efficient** | ⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ | سرورهای ضعیف |
-| **gaming** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ | گیمینگ، Real-time |
+| پروفایل           | تاخیر      | CPU        | پهنای باند | کاربرد                 |
+| ----------------- | ---------- | ---------- | ---------- | ---------------------- |
+| **balanced**      | ⭐⭐⭐     | ⭐⭐⭐     | ⭐⭐⭐     | استفاده روزمره         |
+| **aggressive**    | ⭐⭐⭐⭐   | ⭐⭐       | ⭐⭐⭐⭐⭐ | انتقال فایل، سرعت بالا |
+| **latency**       | ⭐⭐⭐⭐⭐ | ⭐⭐       | ⭐⭐⭐⭐   | بازی، VoIP             |
+| **cpu-efficient** | ⭐⭐       | ⭐⭐⭐⭐⭐ | ⭐⭐       | سرورهای ضعیف           |
+| **gaming**        | ⭐⭐⭐⭐⭐ | ⭐⭐⭐     | ⭐⭐⭐⭐   | گیمینگ، Real-time      |
 
 ### 🎭 Traffic Obfuscation
 
@@ -139,7 +137,7 @@
 ### نصب خودکار با اسکریپت Installer (توصیه می‌شود)
 
 ```bash
-curl -O https://raw.githubusercontent.com/itsFLoKi/DaggerConnect/main/setup.sh
+curl -O https://raw.githubusercontent.com/hossein-m18/DaggerConnect/main/setup.sh
 chmod +x setup.sh
 sudo ./setup.sh
 ```
@@ -210,15 +208,15 @@ DaggerConnect -gen client  # برای کلاینت
 
 10. Port Mappings: 🆕
     Protocol: tcp/udp/both
-    
+
     Bind Settings (پورت روی این سرور):
     - Bind IP: 0.0.0.0
     - Bind Port: 443
-    
+
     Target Settings (پورت مقصد):
     - Target IP: 127.0.0.1
     - Target Port: 443
-    
+
     ✓ Mapping: 0.0.0.0:443 → 127.0.0.1:443
 
 11. Verbose logging (اختیاری): y/N
@@ -244,7 +242,7 @@ DaggerConnect -gen client  # برای کلاینت
    - Aggressive pool: Y
    - Retry interval: 5
    - Dial timeout: 20
-   
+
    اگر httpmux/httpsmux انتخاب کردید:
    - HTTP Mimicry settings باید با سرور یکسان باشد
 
@@ -279,10 +277,11 @@ DaggerConnect -gen client  # برای کلاینت
 ### مثال 1: V2Ray/Xray با HTTP Mimicry (بهترین برای دور زدن فیلترینگ) 🆕
 
 #### سرور ایران (Server)
+
 ```yaml
 mode: "server"
 listen: "0.0.0.0:443"
-transport: "httpsmux"  # HTTPS Mimicry
+transport: "httpsmux" # HTTPS Mimicry
 psk: "my-super-secret-key-12345"
 profile: "aggressive"
 verbose: true
@@ -329,6 +328,7 @@ advanced:
 ```
 
 #### سرور خارج (Client)
+
 ```yaml
 mode: "client"
 psk: "my-super-secret-key-12345"
@@ -387,10 +387,11 @@ advanced:
 ### مثال 2: WireGuard Tunnel با KCP
 
 #### سرور ایران
+
 ```yaml
 mode: "server"
 listen: "0.0.0.0:4000"
-transport: "kcpmux"  # KCP برای UDP بهتره
+transport: "kcpmux" # KCP برای UDP بهتره
 psk: "wireguard-tunnel-key"
 profile: "latency"
 verbose: false
@@ -401,7 +402,7 @@ maps:
     target: "127.0.0.1:51820"
 
 obfuscation:
-  enabled: false  # برای WireGuard بهتره خاموش باشه
+  enabled: false # برای WireGuard بهتره خاموش باشه
 
 kcp:
   nodelay: 1
@@ -414,6 +415,7 @@ kcp:
 ```
 
 #### سرور خارج
+
 ```yaml
 mode: "client"
 psk: "wireguard-tunnel-key"
@@ -449,12 +451,12 @@ maps:
   - type: tcp
     bind: "0.0.0.0:2222"
     target: "127.0.0.1:22"
-  
+
   # SSH به سرور دیگر در شبکه داخلی
   - type: tcp
     bind: "0.0.0.0:2223"
     target: "192.168.1.100:22"
-  
+
   # RDP به ویندوز سرور
   - type: tcp
     bind: "0.0.0.0:3389"
@@ -491,17 +493,17 @@ maps:
   - type: tcp
     bind: "0.0.0.0:8443"
     target: "127.0.0.1:443"
-  
+
   # Shadowsocks
   - type: tcp
     bind: "0.0.0.0:8388"
     target: "127.0.0.1:8388"
-  
+
   # SSH
   - type: tcp
     bind: "0.0.0.0:2222"
     target: "127.0.0.1:22"
-  
+
   # WireGuard
   - type: udp
     bind: "0.0.0.0:51820"
@@ -536,7 +538,7 @@ mode: "server"
 listen: "0.0.0.0:4000"
 transport: "kcpmux"
 psk: "gaming-server-key"
-profile: "gaming"  # پروفایل gaming
+profile: "gaming" # پروفایل gaming
 verbose: false
 
 maps:
@@ -547,7 +549,7 @@ maps:
   - type: udp
     bind: "0.0.0.0:25565"
     target: "127.0.0.1:25565"
-  
+
   # CS:GO
   - type: udp
     bind: "0.0.0.0:27015"
@@ -555,7 +557,7 @@ maps:
   - type: tcp
     bind: "0.0.0.0:27015"
     target: "127.0.0.1:27015"
-  
+
   # Rust
   - type: tcp
     bind: "0.0.0.0:28015"
@@ -565,7 +567,7 @@ maps:
     target: "127.0.0.1:28016"
 
 obfuscation:
-  enabled: false  # برای گیمینگ بهتره خاموش باشه
+  enabled: false # برای گیمینگ بهتره خاموش باشه
 
 kcp:
   nodelay: 1
@@ -601,7 +603,7 @@ paths:
     aggressive_pool: true
     retry_interval: 5
     dial_timeout: 20
-  
+
   # Path 2: HTTP Mimicry (backup)
   - transport: "httpmux"
     addr: "server2.example.com:80"
@@ -609,7 +611,7 @@ paths:
     aggressive_pool: true
     retry_interval: 5
     dial_timeout: 15
-  
+
   # Path 3: KCP (fallback سریع)
   - transport: "kcpmux"
     addr: "server3.example.com:4000"
@@ -641,12 +643,12 @@ http_mimic:
 
 ```yaml
 http_mimic:
-  fake_domain: "www.google.com"     # دامنه جعلی در Host header
-  fake_path: "/search"               # مسیر جعلی
-  user_agent: "Mozilla/5.0..."       # User-Agent واقعی
-  chunked_encoding: true             # استفاده از chunked transfer
-  session_cookie: true               # ارسال cookie و session ID
-  custom_headers:                    # هدرهای اضافی
+  fake_domain: "www.google.com" # دامنه جعلی در Host header
+  fake_path: "/search" # مسیر جعلی
+  user_agent: "Mozilla/5.0..." # User-Agent واقعی
+  chunked_encoding: true # استفاده از chunked transfer
+  session_cookie: true # ارسال cookie و session ID
+  custom_headers: # هدرهای اضافی
     - "X-Requested-With: XMLHttpRequest"
     - "Referer: https://www.google.com/"
     - "Accept-Language: en-US,en;q=0.9"
@@ -654,12 +656,12 @@ http_mimic:
 
 #### 🌐 توصیه‌های Domain:
 
-| Domain | کاربرد | توضیح |
-|--------|--------|-------|
-| `www.google.com` | عمومی | پرترافیک‌ترین سایت |
-| `www.cloudflare.com` | CDN/API | شبیه‌ترین به ترافیک CDN |
-| `api.github.com` | Developer | برای ترافیک API |
-| `www.microsoft.com` | Enterprise | برای محیط‌های کاری |
+| Domain               | کاربرد     | توضیح                   |
+| -------------------- | ---------- | ----------------------- |
+| `www.google.com`     | عمومی      | پرترافیک‌ترین سایت      |
+| `www.cloudflare.com` | CDN/API    | شبیه‌ترین به ترافیک CDN |
+| `api.github.com`     | Developer  | برای ترافیک API         |
+| `www.microsoft.com`  | Enterprise | برای محیط‌های کاری      |
 
 #### 👤 User-Agent های پیشنهادی:
 
@@ -686,23 +688,23 @@ user_agent: "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gec
 
 ```yaml
 obfuscation:
-  enabled: true           # فعال/غیرفعال سازی obfuscation
-  min_padding: 16         # حداقل padding (بایت)
-  max_padding: 512        # حداکثر padding (بایت)
-  min_delay_ms: 5         # حداقل تاخیر (میلی‌ثانیه)
-  max_delay_ms: 50        # حداکثر تاخیر (میلی‌ثانیه)
-  burst_chance: 0.15      # احتمال burst mode (0.0-1.0)
+  enabled: true # فعال/غیرفعال سازی obfuscation
+  min_padding: 16 # حداقل padding (بایت)
+  max_padding: 512 # حداکثر padding (بایت)
+  min_delay_ms: 5 # حداقل تاخیر (میلی‌ثانیه)
+  max_delay_ms: 50 # حداکثر تاخیر (میلی‌ثانیه)
+  burst_chance: 0.15 # احتمال burst mode (0.0-1.0)
 ```
 
 #### 🎯 توصیه‌های Obfuscation:
 
-| سناریو | enabled | padding | delay | burst | کاربرد |
-|---------|---------|---------|-------|-------|--------|
-| **Maximum Stealth** | true | 128-2048 | 15-150 | 0.3 | فیلترینگ شدید |
-| **Balanced** | true | 32-1024 | 10-100 | 0.2 | استفاده عمومی |
-| **Performance** | true | 16-512 | 5-50 | 0.15 | سرعت+امنیت |
-| **Light** | true | 8-256 | 2-20 | 0.1 | سرعت بالا |
-| **Gaming/VoIP** | false | - | - | - | کمترین تاخیر |
+| سناریو              | enabled | padding  | delay  | burst | کاربرد        |
+| ------------------- | ------- | -------- | ------ | ----- | ------------- |
+| **Maximum Stealth** | true    | 128-2048 | 15-150 | 0.3   | فیلترینگ شدید |
+| **Balanced**        | true    | 32-1024  | 10-100 | 0.2   | استفاده عمومی |
+| **Performance**     | true    | 16-512   | 5-50   | 0.15  | سرعت+امنیت    |
+| **Light**           | true    | 8-256    | 2-20   | 0.1   | سرعت بالا     |
+| **Gaming/VoIP**     | false   | -        | -      | -     | کمترین تاخیر  |
 
 ---
 
@@ -710,21 +712,21 @@ obfuscation:
 
 ```yaml
 smux:
-  keepalive: 5           # KeepAlive interval (ثانیه)
-  max_recv: 16777216     # Max receive buffer (16 MB)
-  max_stream: 16777216   # Max stream buffer (16 MB)
-  frame_size: 32768      # Frame size (32 KB)
-  version: 2             # SMUX protocol version
+  keepalive: 5 # KeepAlive interval (ثانیه)
+  max_recv: 16777216 # Max receive buffer (16 MB)
+  max_stream: 16777216 # Max stream buffer (16 MB)
+  frame_size: 32768 # Frame size (32 KB)
+  version: 2 # SMUX protocol version
 ```
 
 #### 📊 توصیه‌های SMUX:
 
-| پروفایل | keepalive | max_recv | max_stream | کاربرد |
-|---------|-----------|----------|------------|--------|
-| **Gaming** | 2 | 16777216 | 16777216 | Low latency |
-| **Aggressive** | 5 | 16777216 | 16777216 | High speed |
-| **Balanced** | 8 | 8388608 | 8388608 | Normal use |
-| **CPU-Efficient** | 10 | 8388608 | 8388608 | Low CPU |
+| پروفایل           | keepalive | max_recv | max_stream | کاربرد      |
+| ----------------- | --------- | -------- | ---------- | ----------- |
+| **Gaming**        | 2         | 16777216 | 16777216   | Low latency |
+| **Aggressive**    | 5         | 16777216 | 16777216   | High speed  |
+| **Balanced**      | 8         | 8388608  | 8388608    | Normal use  |
+| **CPU-Efficient** | 10        | 8388608  | 8388608    | Low CPU     |
 
 ---
 
@@ -732,15 +734,15 @@ smux:
 
 ```yaml
 advanced:
-  tcp_nodelay: true              # TCP NoDelay (کاهش latency)
-  tcp_keepalive: 15              # TCP KeepAlive (ثانیه)
-  tcp_read_buffer: 8388608       # TCP Read Buffer (8 MB)
-  tcp_write_buffer: 8388608      # TCP Write Buffer (8 MB)
-  max_connections: 5000          # حداکثر اتصالات همزمان
-  connection_timeout: 60         # Timeout اتصال (ثانیه)
-  stream_timeout: 120            # Timeout stream (ثانیه)
-  udp_buffer_size: 4194304       # UDP Buffer (4 MB)
-  cleanup_interval: 3            # Cleanup interval (ثانیه)
+  tcp_nodelay: true # TCP NoDelay (کاهش latency)
+  tcp_keepalive: 15 # TCP KeepAlive (ثانیه)
+  tcp_read_buffer: 8388608 # TCP Read Buffer (8 MB)
+  tcp_write_buffer: 8388608 # TCP Write Buffer (8 MB)
+  max_connections: 5000 # حداکثر اتصالات همزمان
+  connection_timeout: 60 # Timeout اتصال (ثانیه)
+  stream_timeout: 120 # Timeout stream (ثانیه)
+  udp_buffer_size: 4194304 # UDP Buffer (4 MB)
+  cleanup_interval: 3 # Cleanup interval (ثانیه)
 ```
 
 ---
@@ -749,25 +751,25 @@ advanced:
 
 ```yaml
 paths:
-  - transport: "httpsmux"            # نوع transport
-    addr: "server.example.com:443"   # آدرس و پورت سرور
-    connection_pool: 3               # تعداد اتصالات همزمان
-    aggressive_pool: true            # حالت aggressive pooling
-    retry_interval: 5                # فاصله retry (ثانیه)
-    dial_timeout: 20                 # timeout اتصال (ثانیه)
+  - transport: "httpsmux" # نوع transport
+    addr: "server.example.com:443" # آدرس و پورت سرور
+    connection_pool: 3 # تعداد اتصالات همزمان
+    aggressive_pool: true # حالت aggressive pooling
+    retry_interval: 5 # فاصله retry (ثانیه)
+    dial_timeout: 20 # timeout اتصال (ثانیه)
 ```
 
 #### 📊 Connection Pool Guidelines:
 
-| شرایط شبکه | Transport | Pool Size | Aggressive |
-|------------|-----------|-----------|------------|
-| **HTTP Mimicry Stable** | httpsmux | 2-3 | false |
-| **HTTP Mimicry Normal** | httpsmux | 3-4 | true |
-| **HTTP Mimicry Unstable** | httpsmux | 4-6 | true |
-| **TCP/KCP Stable** | tcpmux/kcpmux | 2 | false |
-| **TCP/KCP Normal** | tcpmux/kcpmux | 3-4 | false |
-| **TCP/KCP Unstable** | tcpmux/kcpmux | 5-6 | true |
-| **High Load** | any | 6-8 | true |
+| شرایط شبکه                | Transport     | Pool Size | Aggressive |
+| ------------------------- | ------------- | --------- | ---------- |
+| **HTTP Mimicry Stable**   | httpsmux      | 2-3       | false      |
+| **HTTP Mimicry Normal**   | httpsmux      | 3-4       | true       |
+| **HTTP Mimicry Unstable** | httpsmux      | 4-6       | true       |
+| **TCP/KCP Stable**        | tcpmux/kcpmux | 2         | false      |
+| **TCP/KCP Normal**        | tcpmux/kcpmux | 3-4       | false      |
+| **TCP/KCP Unstable**      | tcpmux/kcpmux | 5-6       | true       |
+| **High Load**             | any           | 6-8       | true       |
 
 ---
 
@@ -778,8 +780,8 @@ paths:
 ```yaml
 maps:
   - type: tcp
-    bind: "BIND_IP:BIND_PORT"       # پورت باز شده روی سرور
-    target: "TARGET_IP:TARGET_PORT"  # مقصد فوروارد
+    bind: "BIND_IP:BIND_PORT" # پورت باز شده روی سرور
+    target: "TARGET_IP:TARGET_PORT" # مقصد فوروارد
 ```
 
 ### مثال‌های کاربردی:
@@ -876,44 +878,44 @@ journalctl -u DaggerConnect-server | grep ERROR
 
 ### مقایسه پروتکل‌ها (با Obfuscation)
 
-| پروتکل | تاخیر (ms) | پهنای باند (Mbps) | CPU (%) | حافظه (MB) | DPI Bypass |
-|--------|-----------|------------------|---------|-----------|------------|
-| **tcpmux** | 15 | 850 | 8 | 45 | ⭐⭐ |
-| **kcpmux** | 12 | 920 | 15 | 65 | ⭐⭐⭐ |
-| **wsmux** | 18 | 780 | 10 | 50 | ⭐⭐⭐ |
-| **wssmux** | 20 | 750 | 12 | 55 | ⭐⭐⭐⭐ |
-| **httpmux** 🆕 | 22 | 720 | 13 | 58 | ⭐⭐⭐⭐⭐ |
-| **httpsmux** 🆕 | 25 | 700 | 15 | 62 | ⭐⭐⭐⭐⭐ |
+| پروتکل          | تاخیر (ms) | پهنای باند (Mbps) | CPU (%) | حافظه (MB) | DPI Bypass |
+| --------------- | ---------- | ----------------- | ------- | ---------- | ---------- |
+| **tcpmux**      | 15         | 850               | 8       | 45         | ⭐⭐       |
+| **kcpmux**      | 12         | 920               | 15      | 65         | ⭐⭐⭐     |
+| **wsmux**       | 18         | 780               | 10      | 50         | ⭐⭐⭐     |
+| **wssmux**      | 20         | 750               | 12      | 55         | ⭐⭐⭐⭐   |
+| **httpmux** 🆕  | 22         | 720               | 13      | 58         | ⭐⭐⭐⭐⭐ |
+| **httpsmux** 🆕 | 25         | 700               | 15      | 62         | ⭐⭐⭐⭐⭐ |
 
-*تست شده با connection pool=4, profile=balanced, obfuscation=enabled, شبکه 1Gbps*
+_تست شده با connection pool=4, profile=balanced, obfuscation=enabled, شبکه 1Gbps_
 
 ### مقایسه پروفایل‌ها (با KCP)
 
-| پروفایل | تاخیر (ms) | Throughput (Mbps) | CPU (%) | RAM (MB) |
-|---------|-----------|-------------------|---------|----------|
-| **cpu-efficient** | 25 | 450 | 5 | 40 |
-| **balanced** | 15 | 750 | 10 | 50 |
-| **latency** | 8 | 900 | 18 | 60 |
-| **aggressive** | 10 | 950 | 22 | 70 |
-| **gaming** | 7 | 920 | 20 | 65 |
+| پروفایل           | تاخیر (ms) | Throughput (Mbps) | CPU (%) | RAM (MB) |
+| ----------------- | ---------- | ----------------- | ------- | -------- |
+| **cpu-efficient** | 25         | 450               | 5       | 40       |
+| **balanced**      | 15         | 750               | 10      | 50       |
+| **latency**       | 8          | 900               | 18      | 60       |
+| **aggressive**    | 10         | 950               | 22      | 70       |
+| **gaming**        | 7          | 920               | 20      | 65       |
 
 ### تأثیر Obfuscation بر عملکرد
 
-| حالت | تاخیر اضافه (ms) | CPU اضافه (%) | Throughput (%) |
-|------|------------------|---------------|----------------|
-| **Disabled** | 0 | 0 | 100% |
-| **Light (8-256)** | 2-5 | 2-3 | 95% |
-| **Balanced (16-512)** | 5-15 | 5-8 | 90% |
-| **Heavy (64-2048)** | 15-50 | 10-18 | 85% |
-| **Maximum (128-2048)** | 30-80 | 15-25 | 75% |
+| حالت                   | تاخیر اضافه (ms) | CPU اضافه (%) | Throughput (%) |
+| ---------------------- | ---------------- | ------------- | -------------- |
+| **Disabled**           | 0                | 0             | 100%           |
+| **Light (8-256)**      | 2-5              | 2-3           | 95%            |
+| **Balanced (16-512)**  | 5-15             | 5-8           | 90%            |
+| **Heavy (64-2048)**    | 15-50            | 10-18         | 85%            |
+| **Maximum (128-2048)** | 30-80            | 15-25         | 75%            |
 
 ### تأثیر HTTP Mimicry 🆕
 
-| Transport | Overhead | DPI Detection | توضیح |
-|-----------|----------|---------------|-------|
-| **tcpmux** | 5% | 95% | قابل شناسایی |
-| **httpmux** | 15% | 10% | تقریباً غیرقابل شناسایی |
-| **httpsmux** | 18% | 5% | بهترین - TLS + Mimicry |
+| Transport    | Overhead | DPI Detection | توضیح                   |
+| ------------ | -------- | ------------- | ----------------------- |
+| **tcpmux**   | 5%       | 95%           | قابل شناسایی            |
+| **httpmux**  | 15%      | 10%           | تقریباً غیرقابل شناسایی |
+| **httpsmux** | 18%      | 5%            | بهترین - TLS + Mimicry  |
 
 ---
 
@@ -950,7 +952,7 @@ openssl req -x509 -newkey rsa:4096 -nodes \
 
 ```yaml
 # server.yaml
-transport: "httpsmux"  # یا wssmux
+transport: "httpsmux" # یا wssmux
 cert_file: "/etc/DaggerConnect/certs/cert.pem"
 key_file: "/etc/DaggerConnect/certs/key.pem"
 ```
@@ -1234,12 +1236,14 @@ sudo systemctl status DaggerConnect-client
 ### ❓ HTTP Mimicry چیه و کی باید ازش استفاده کنم؟ 🆕
 
 HTTP Mimicry ترافیک شما رو دقیقاً شبیه یک مرورگر واقعی می‌کنه. استفاده کن اگر:
+
 - ✅ فیلترینگ DPI (Deep Packet Inspection) وجود داره
 - ✅ ترافیک VPN/Proxy شما block می‌شه
 - ✅ میخوای ترافیکت 100% طبیعی به نظر برسه
 - ✅ از پورت 80 یا 443 استفاده می‌کنی
 
 استفاده نکن اگر:
+
 - ❌ سرعت اولویت مطلق است (overhead حدود 15-20%)
 - ❌ برای gaming/VoIP (latency اضافی)
 - ❌ فیلترینگ خاصی وجود ندارهnpm install
@@ -1247,36 +1251,40 @@ HTTP Mimicry ترافیک شما رو دقیقاً شبیه یک مرورگر و
 ### ❓ چه زمانی Obfuscation رو فعال کنم؟
 
 فعال کنید اگر:
+
 - DPI/Filtering وجود داره
 - ترافیک شما تحت نظارته
 - میخواید pattern های ترافیک رو مخفی کنید
 - از HTTP Mimicry استفاده می‌کنید (توصیه می‌شود)
 
 غیرفعال کنید اگر:
+
 - سرعت و تاخیر اولویت اوله
 - برای gaming/VoIP استفاده میکنید
 - شبکه محلی (LAN) استفاده می‌کنید
 
 ### ❓ Connection Pool چقدر باید باشه؟
 
-| شرایط | TCP/KCP | HTTP Mimicry |
-|-------|---------|--------------|
-| **شبکه پایدار** | 2-3 | 2-3 |
-| **شبکه معمولی** | 3-4 | 3-4 |
-| **شبکه ناپایدار** | 5-6 | 4-6 |
-| **بار بالا** | 6-8 | 6-8 |
+| شرایط             | TCP/KCP | HTTP Mimicry |
+| ----------------- | ------- | ------------ |
+| **شبکه پایدار**   | 2-3     | 2-3          |
+| **شبکه معمولی**   | 3-4     | 3-4          |
+| **شبکه ناپایدار** | 5-6     | 4-6          |
+| **بار بالا**      | 6-8     | 6-8          |
 
 ### ❓ بهترین Transport برای دور زدن فیلترینگ؟ 🆕
 
 **توصیه: `httpsmux`** (HTTPS Mimicry)
 
 مزایا:
+
 - ✅ بالاترین سطح DPI bypass
 - ✅ ترافیک 100% شبیه HTTPS
 - ✅ TLS encryption
 - ✅ قابل اعتماد
 
 جایگزین‌ها:
+
 - `httpmux` - اگر TLS نمی‌خواید
 - `wssmux` - اگه WebSocket ترجیح می‌دید
 - `kcpmux` - برای سرعت بالا (بدون DPI bypass قوی)
@@ -1321,9 +1329,10 @@ smux:
 - **Target**: پورتی که ترافیک به اونجا **فوروارد** می‌شه
 
 مثال:
+
 ```yaml
-bind: "0.0.0.0:2222"      # پورت 2222 باز می‌شه
-target: "127.0.0.1:22"    # ترافیک به SSH فوروارد می‌شه
+bind: "0.0.0.0:2222" # پورت 2222 باز می‌شه
+target: "127.0.0.1:22" # ترافیک به SSH فوروارد می‌شه
 ```
 
 ---
@@ -1355,6 +1364,7 @@ target: "127.0.0.1:22"    # ترافیک به SSH فوروارد می‌شه
 ## 🗓️ Changelog
 
 ### v1.1 (جدید!) 🆕
+
 - ➕ اضافه شدن HTTP/HTTPS Mimicry Transport
 - ➕ تنظیمات پیشرفته SMUX
 - ➕ تنظیمات پیشرفته TCP/UDP
@@ -1367,6 +1377,7 @@ target: "127.0.0.1:22"    # ترافیک به SSH فوروارد می‌شه
 - 🔧 بهبود Obfuscation Algorithm
 
 ### v1.0
+
 - 🎉 انتشار اولیه
 - ✨ پشتیبانی از TCP, KCP, WS, WSS
 - 🎭 Traffic Obfuscation
@@ -1386,10 +1397,3 @@ Made with ❤️ by [itsFLoKi](https://github.com/itsFLoKi)
 [⬆ برگشت به بالا](#-daggerconnect)
 
 </div>
-
-
-
-
-
-
-
