@@ -46,6 +46,8 @@ if (Test-Path $connectCopy) {
     if (Test-Path $connectCopy) { $script:ConnectExe = $connectCopy }
 }
 
+# Persistent SSH session pool
+$script:Sessions = @{}
 # ═══ BANNER ═══
 function Show-Banner {
     Write-Host ""
@@ -107,7 +109,7 @@ function Parse-Config {
                     $name = $Matches[1]
                     $parts = $Matches[2] -split '\|'
                     if ($parts.Count -lt 4) { continue }
-                    $ips  = ($parts[0].Trim()) -split ',' | ForEach-Object { $_.Trim() }
+                    $ips  = @(($parts[0].Trim()) -split ',' | ForEach-Object { $_.Trim() })
                     $port = [int]($parts[1].Trim())
                     $user = $parts[2].Trim()
                     $auth = $parts[3].Trim()
@@ -125,21 +127,143 @@ function Parse-Config {
     }
     if ($Iran) {
         $f = $IranServers | Where-Object { $_.Name -eq $Iran }
-        if (-not $f) { Write-Host "  X Iran '$Iran' not found" -Fore Red; exit 1 }
+        if (-not $f) { $f = $KharejServers | Where-Object { $_.Name -eq $Iran } }
+        if (-not $f) { Write-Host "  X Server '$Iran' not found" -Fore Red; exit 1 }
         $IranServers.Clear(); [void]$IranServers.Add($f)
     }
     if ($Kharej) {
         $f = $KharejServers | Where-Object { $_.Name -eq $Kharej }
-        if (-not $f) { Write-Host "  X Kharej '$Kharej' not found" -Fore Red; exit 1 }
+        if (-not $f) { $f = $IranServers | Where-Object { $_.Name -eq $Kharej } }
+        if (-not $f) { Write-Host "  X Server '$Kharej' not found" -Fore Red; exit 1 }
         $KharejServers.Clear(); [void]$KharejServers.Add($f)
     }
     if ($IranServers.Count -eq 0) { Write-Host "  X No Iran servers!" -Fore Red; exit 1 }
     if ($KharejServers.Count -eq 0) { Write-Host "  X No Kharej servers!" -Fore Red; exit 1 }
 }
 
-# ═══ NATIVE SSH (no modules needed) ═══
+# ═══ PERSISTENT SSH SESSIONS (background reader thread) ═══
+function Open-PersistentSsh($ip, $port, $user) {
+    $sshArgs = @(
+        "-T", "-p", $port,
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=NUL",
+        "-o", "BatchMode=yes",
+        "-o", "ServerAliveInterval=10",
+        "-o", "ServerAliveCountMax=3",
+        "-o", "LogLevel=ERROR",
+        "-i", $script:KeyFile
+    )
+    if ($script:ConnectExe -and $ProxyPort -gt 0 -and ($script:KharejIPs -contains $ip)) {
+        $sshArgs += @("-o", "ProxyCommand=$($script:ConnectExe) -S 127.0.0.1:$ProxyPort %h %p")
+    }
+    $sshArgs += "${user}@${ip}"
+
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo.FileName = "ssh"
+    $proc.StartInfo.Arguments = ($sshArgs | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }) -join " "
+    $proc.StartInfo.UseShellExecute = $false
+    $proc.StartInfo.RedirectStandardInput = $true
+    $proc.StartInfo.RedirectStandardOutput = $true
+    $proc.StartInfo.RedirectStandardError = $true
+    $proc.StartInfo.CreateNoWindow = $true
+    $proc.Start() | Out-Null
+
+    # Background reader: reads stdout lines into a ConcurrentQueue
+    $queue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+    $reader = $proc.StandardOutput
+    $ps = [powershell]::Create()
+    $ps.AddScript({
+        param($reader, $queue)
+        while ($true) {
+            try {
+                $line = $reader.ReadLine()
+                if ($line -eq $null) { break }
+                $queue.Enqueue($line)
+            } catch { break }
+        }
+    }).AddArgument($reader).AddArgument($queue) | Out-Null
+    $handle = $ps.BeginInvoke()
+
+    # Verify connection — send marker and wait for it in the queue
+    $marker = "RDY_$(Get-Random)"
+    $proc.StandardInput.WriteLine("echo $marker")
+    $proc.StandardInput.Flush()
+    $found = $false
+    $deadline = [DateTime]::Now.AddSeconds(20)
+    while ([DateTime]::Now -lt $deadline) {
+        $line = $null
+        if ($queue.TryDequeue([ref]$line)) {
+            if ($line -eq $marker) { $found = $true; break }
+        } else {
+            Start-Sleep -Milliseconds 100
+        }
+    }
+    if ($found) {
+        $script:Sessions[$ip] = @{ Proc = $proc; Queue = $queue; PS = $ps; Handle = $handle }
+        return $true
+    }
+    try { $ps.Stop(); $ps.Dispose() } catch {}
+    try { $proc.Kill() } catch {}
+    $proc.Dispose()
+    return $false
+}
+
+function Send-Cmd($ip, $command, [int]$timeout = 30) {
+    $session = $script:Sessions[$ip]
+    if (-not $session) { return "" }
+    $proc = $session.Proc
+    $queue = $session.Queue
+    if ($proc.HasExited) { return "" }
+
+    # Drain any leftover lines from previous commands
+    $junk = $null
+    while ($queue.TryDequeue([ref]$junk)) {}
+
+    $marker = "XDONE_$(Get-Random)"
+    $proc.StandardInput.WriteLine("$command; echo $marker")
+    $proc.StandardInput.Flush()
+
+    $lines = @()
+    $deadline = [DateTime]::Now.AddSeconds($timeout)
+    while ([DateTime]::Now -lt $deadline) {
+        $line = $null
+        if ($queue.TryDequeue([ref]$line)) {
+            if ($line -eq $marker) { break }
+            $lines += $line
+        } else {
+            Start-Sleep -Milliseconds 50
+        }
+    }
+    return ($lines -join "`n").Trim()
+}
+
+function Close-AllSessions {
+    foreach ($ip in @($script:Sessions.Keys)) {
+        $session = $script:Sessions[$ip]
+        if ($session) {
+            try {
+                $session.Proc.StandardInput.WriteLine("exit")
+                $session.Proc.WaitForExit(3000) | Out-Null
+                if (-not $session.Proc.HasExited) { $session.Proc.Kill() }
+            } catch {}
+            try { $session.PS.Stop(); $session.PS.Dispose() } catch {}
+            $session.Proc.Dispose()
+        }
+    }
+    $script:Sessions.Clear()
+}
+
+# ═══ SSH (auto-uses persistent sessions) ═══
 function Invoke-Ssh {
     param($ip, [int]$port, $user, $command, [int]$timeout = 30)
+
+    # Prefer persistent session if available
+    $sess = $script:Sessions[$ip]
+    if ($sess -and $sess.Proc -and -not $sess.Proc.HasExited) {
+        return Send-Cmd $ip $command $timeout
+    }
+
+    # Fallback: one-shot SSH (used by Setup-Keys etc.)
     $sshArgs = @(
         "-p", $port,
         "-o", "StrictHostKeyChecking=no",
@@ -149,7 +273,6 @@ function Invoke-Ssh {
         "-o", "LogLevel=ERROR",
         "-i", $script:KeyFile
     )
-    # Auto SOCKS proxy for Kharej IPs
     if ($script:ConnectExe -and $ProxyPort -gt 0 -and ($script:KharejIPs -contains $ip)) {
         $sshArgs += @("-o", "ProxyCommand=$($script:ConnectExe) -S 127.0.0.1:$ProxyPort %h %p")
     }
@@ -294,7 +417,6 @@ function Build-ServerYaml($sc) {
     $y = "mode: ""server""`nlisten: ""0.0.0.0:${tp}""`ntransport: ""$($sc.T)""`npsk: ""${psk}""`nprofile: ""$($sc.Prof)""`nverbose: true`nheartbeat: 2"
     if ($sc.T -in "wssmux","httpsmux") { $y += "`ncert_file: ""${dcd}/certs/cert.pem""`nkey_file: ""${dcd}/certs/key.pem""" }
     $y += "`n`nmaps:`n  - type: tcp`n    bind: ""0.0.0.0:${tport}""`n    target: ""127.0.0.1:${tport}"""
-    if (-not $Quick) { $y += "`n  - type: tcp`n    bind: ""0.0.0.0:5201""`n    target: ""127.0.0.1:5201""" }
     $y += "`n`n" + (Get-ObfusBlock $sc.Obf) + "`n`n" + (Get-SmuxBlock $sc.Smux)
     if ($sc.T -eq "kcpmux") { $y += "`n`n" + (Get-KcpBlock $sc.Kcp) }
     if ($sc.T -in "httpmux","httpsmux") { $y += "`n`n" + (Get-MimicryBlock $sc.Ch) }
@@ -312,36 +434,33 @@ function Build-ClientYaml($sc, $irIp) {
     return $y
 }
 
-# ═══ DEPLOY ═══
-function Deploy-Yaml($ip, $port, $user, $role, $yaml, $transport) {
+# ═══ DEPLOY + START (combined into 1 SSH per server) ═══
+function Deploy-And-Start($ip, $port, $user, $role, $yaml, $transport) {
     $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($yaml))
-    Invoke-Ssh $ip $port $user "mkdir -p $($script:DCDir); echo '$b64' | base64 -d > $($script:DCDir)/${role}.yaml" 15 | Out-Null
-
-    if ($role -eq "server" -and ($transport -eq "wssmux" -or $transport -eq "httpsmux")) {
-        Invoke-Ssh $ip $port $user "if [ ! -f $($script:DCDir)/certs/cert.pem ]; then mkdir -p $($script:DCDir)/certs; openssl req -x509 -newkey rsa:2048 -keyout $($script:DCDir)/certs/key.pem -out $($script:DCDir)/certs/cert.pem -days 365 -nodes -subj /CN=www.google.com 2>/dev/null; fi" 30 | Out-Null
-    }
-
     $svc = "[Unit]`nDescription=DaggerConnect ${role}`nAfter=network.target`n[Service]`nType=simple`nExecStart=$($script:DCBin) -c $($script:DCDir)/${role}.yaml`nRestart=always`nRestartSec=3`nLimitNOFILE=1048576`n[Install]`nWantedBy=multi-user.target"
     $b64s = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($svc))
-    Invoke-Ssh $ip $port $user "echo '$b64s' | base64 -d > $($script:DCSys)/DaggerConnect-${role}.service; systemctl daemon-reload; systemctl stop DaggerConnect-${role} 2>/dev/null; sleep 1; systemctl start DaggerConnect-${role}" 20 | Out-Null
-}
 
-function Stop-DC($ip, $port, $user, $role) {
-    Invoke-Ssh $ip $port $user "systemctl stop DaggerConnect-${role} 2>/dev/null; true" 10 | Out-Null
-}
-
-# ═══ TEST ═══
-function Wait-Tunnel($irIp, $irP, $irU, $khIp, $khP, $khU) {
-    for ($w = 0; $w -lt 20; $w++) {
-        $srv = Invoke-Ssh $irIp $irP $irU 'systemctl is-active DaggerConnect-server 2>/dev/null || echo dead' 10
-        $cli = Invoke-Ssh $khIp $khP $khU 'systemctl is-active DaggerConnect-client 2>/dev/null || echo dead' 10
-        if ($srv -eq "active" -and $cli -eq "active") {
-            $ok = Invoke-Ssh $khIp $khP $khU 'journalctl -u DaggerConnect-client -n 20 --no-pager 2>/dev/null | grep -ci "session added\|connected\|established" || echo 0' 10
-            try { if ([int]$ok -gt 0) { return $true } } catch {}
-        }
-        Start-Sleep 1
+    $certCmd = ""
+    if ($role -eq "server" -and ($transport -eq "wssmux" -or $transport -eq "httpsmux")) {
+        $certCmd = "if [ ! -f $($script:DCDir)/certs/cert.pem ]; then mkdir -p $($script:DCDir)/certs; openssl req -x509 -newkey rsa:2048 -keyout $($script:DCDir)/certs/key.pem -out $($script:DCDir)/certs/cert.pem -days 365 -nodes -subj /CN=www.google.com 2>/dev/null; fi;"
     }
-    return $false
+
+    # One SSH: stop + write yaml + certs + write service + start
+    $cmd = "systemctl stop DaggerConnect-${role} 2>/dev/null; mkdir -p $($script:DCDir); echo '$b64' | base64 -d > $($script:DCDir)/${role}.yaml; ${certCmd} echo '$b64s' | base64 -d > $($script:DCSys)/DaggerConnect-${role}.service; systemctl daemon-reload; systemctl start DaggerConnect-${role}; echo DEPLOYED"
+    Invoke-Ssh $ip $port $user $cmd 30 | Out-Null
+}
+
+# Wait for tunnel ON the server (1 SSH call with bash loop)
+function Wait-Tunnel-Remote($khIp, $khP, $khU) {
+    # Single SSH: bash loop checks journal every second for 8s
+    $cmd = "for i in `$(seq 1 8); do sleep 1; st=`$(systemctl is-active DaggerConnect-client 2>/dev/null); if [ `"`$st`" = 'failed' ] || [ `"`$st`" = 'dead' ]; then echo CRASHED; exit 0; fi; if journalctl -u DaggerConnect-client -n 30 --no-pager 2>/dev/null | grep -qiE 'session added|connected|established'; then echo TUNNEL_OK; exit 0; fi; done; echo TIMEOUT"
+    $result = Invoke-Ssh $khIp $khP $khU $cmd 20
+    return $result
+}
+
+function Stop-Both($irIp, $irP, $irU, $khIp, $khP, $khU) {
+    Invoke-Ssh $irIp $irP $irU 'systemctl stop DaggerConnect-server 2>/dev/null; true' 10 | Out-Null
+    Invoke-Ssh $khIp $khP $khU 'systemctl stop DaggerConnect-client 2>/dev/null; true' 10 | Out-Null
 }
 
 function Get-Latency($irIp, $irP, $irU, $khIp) {
@@ -352,16 +471,42 @@ function Get-Latency($irIp, $irP, $irU, $khIp) {
 
 function Get-Bandwidth($irIp, $irP, $irU, $khIp, $khP, $khU) {
     if ($Quick) { return "-" }
-    Invoke-Ssh $khIp $khP $khU 'pkill -f "iperf3 -s" 2>/dev/null; sleep 0.5; iperf3 -s -p 5201 -D 2>/dev/null' 10 | Out-Null
-    Start-Sleep 2
-    $dur = $script:TestDuration
-    $out = Invoke-Ssh $irIp $irP $irU "iperf3 -c 127.0.0.1 -p 5201 -t $dur -P 2 --json 2>/dev/null | python3 -c 'import sys,json;d=json.load(sys.stdin);print(round(d[""end""][""sum_received""][""bits_per_second""]/1e6,1))' 2>/dev/null || echo -" ($dur + 30)
-    Invoke-Ssh $khIp $khP $khU 'pkill -f "iperf3 -s" 2>/dev/null' 10 | Out-Null
-    if ($out -and $out -match '^[\d.]') { return "${out} Mbps" }
+    $tport = $script:TestPort
+    $sizeMB = 50
+
+    # Download test (Kharej → Iran): Kharej sends data, Iran receives through tunnel
+    Invoke-Ssh $khIp $khP $khU "nohup bash -c 'dd if=/dev/zero bs=1M count=$sizeMB 2>/dev/null | nc -l -p $tport -q 2 -w 30' &>/dev/null &" 5 | Out-Null
+    Start-Sleep 1
+    $dlOut = Invoke-Ssh $irIp $irP $irU "START=`$(date +%s%N); nc -w 30 127.0.0.1 $tport -q 2 > /dev/null; END=`$(date +%s%N); MS=`$(( (END-START)/1000000 )); echo `$MS" 60
+    Start-Sleep 1
+
+    # Upload test (Iran → Kharej): Iran sends data, Kharej receives through tunnel
+    Invoke-Ssh $khIp $khP $khU "nohup bash -c 'nc -l -p $tport -q 2 -w 30 > /dev/null' &>/dev/null &" 5 | Out-Null
+    Start-Sleep 1
+    $ulOut = Invoke-Ssh $irIp $irP $irU "START=`$(date +%s%N); dd if=/dev/zero bs=1M count=$sizeMB 2>/dev/null | nc -w 30 127.0.0.1 $tport -q 2; END=`$(date +%s%N); MS=`$(( (END-START)/1000000 )); echo `$MS" 60
+
+    # Kill leftover nc
+    Invoke-Ssh $khIp $khP $khU "pkill -f 'nc -l -p $tport' 2>/dev/null; true" 5 | Out-Null
+
+    # Calculate Mbps locally (50MB = 400Mbit, divide by seconds)
+    $dl = "-"
+    $ul = "-"
+    if ($dlOut -match '^\d+$' -and [int]$dlOut.Trim() -gt 0) {
+        $ms = [int]$dlOut.Trim()
+        $dl = [math]::Round(($sizeMB * 8 * 1000) / $ms, 1)
+    }
+    if ($ulOut -match '^\d+$' -and [int]$ulOut.Trim() -gt 0) {
+        $ms = [int]$ulOut.Trim()
+        $ul = [math]::Round(($sizeMB * 8 * 1000) / $ms, 1)
+    }
+
+    if ($dl -ne "-" -or $ul -ne "-") { return "DL:${dl} UL:${ul} Mbps" }
     return "-"
 }
 
-# ═══ RUN ONE TEST ═══
+# ═══ RUN ONE TEST (minimized SSH calls) ═══
+# Iran: 1 SSH deploy + 1 latency (if OK) + 1 stop = 2-3 calls
+# Kharej: 1 SSH deploy + 1 wait-loop + 1 stop = 3 calls (via proxy)
 function Run-Test($sc, $irSrv, $irIp, $khSrv, $khIp) {
     $status = "FAIL"; $lat = "-"; $bw = "-"
 
@@ -371,29 +516,36 @@ function Run-Test($sc, $irSrv, $irIp, $khSrv, $khIp) {
         return
     }
 
-    Write-Host "  > $($sc.L) ($irIp -> $khIp)..." -Fore DarkGray -NoNewline
+    Write-Host "  > $($sc.L) ($irIp -> $khIp) " -Fore DarkGray -NoNewline
 
-    Stop-DC $irIp $irSrv.Port $irSrv.User "server"
-    Stop-DC $khIp $khSrv.Port $khSrv.User "client"
-    Start-Sleep 1
+    # SSH call 1: Deploy + Start server on Iran
+    Deploy-And-Start $irIp $irSrv.Port $irSrv.User "server" (Build-ServerYaml $sc) $sc.T
+    # SSH call 2: Deploy + Start client on Kharej
+    Deploy-And-Start $khIp $khSrv.Port $khSrv.User "client" (Build-ClientYaml $sc $irIp) $sc.T
 
-    Deploy-Yaml $irIp $irSrv.Port $irSrv.User "server" (Build-ServerYaml $sc) $sc.T
-    Deploy-Yaml $khIp $khSrv.Port $khSrv.User "client" (Build-ClientYaml $sc $irIp) $sc.T
+    # SSH call 3: Wait for tunnel (single bash loop on Kharej)
+    $result = Wait-Tunnel-Remote $khIp $khSrv.Port $khSrv.User
 
-    if (Wait-Tunnel $irIp $irSrv.Port $irSrv.User $khIp $khSrv.Port $khSrv.User) {
+    if ($result -eq "TUNNEL_OK") {
         $status = "OK"
         $lat = Get-Latency $irIp $irSrv.Port $irSrv.User $khIp
         $bw = Get-Bandwidth $irIp $irSrv.Port $irSrv.User $khIp $khSrv.Port $khSrv.User
-        Write-Host " OK  $lat  $bw" -Fore Green
+        Write-Host "OK $lat $bw" -Fore Green
     } else {
-        $err = Invoke-Ssh $khIp $khSrv.Port $khSrv.User 'journalctl -u DaggerConnect-client -n 2 --no-pager 2>/dev/null | tail -1 | cut -c1-60' 10
-        Write-Host " FAIL  $err" -Fore Red
+        # Get detailed error from both server and client logs
+        $errCmd = 'journalctl -u DaggerConnect-{0} -n 10 --no-pager 2>/dev/null | grep -iE "error|fail|license|refused|timeout|❌" | tail -1 | sed "s/.*DaggerConnect\[[0-9]*\]: //" | cut -c1-80'
+        $srvErr = Invoke-Ssh $irIp $irSrv.Port $irSrv.User ($errCmd -f 'server') 8
+        $cliErr = Invoke-Ssh $khIp $khSrv.Port $khSrv.User ($errCmd -f 'client') 8
+        $errMsg = ""
+        if ($srvErr) { $errMsg += "SRV:$srvErr " }
+        if ($cliErr) { $errMsg += "CLI:$cliErr" }
+        if (-not $errMsg) { $errMsg = $result }
+        $failType = if ($result -eq "CRASHED") { "CRASH" } else { "FAIL" }
+        Write-Host "$failType $errMsg" -Fore Red
     }
 
-    Stop-DC $irIp $irSrv.Port $irSrv.User "server"
-    Stop-DC $khIp $khSrv.Port $khSrv.User "client"
+    Stop-Both $irIp $irSrv.Port $irSrv.User $khIp $khSrv.Port $khSrv.User
     [void]$script:Results.Add([pscustomobject]@{Iran=$irSrv.Name;Kharej=$khSrv.Name;Group=$sc.G;Test=$sc.L;IranIP=$irIp;KharejIP=$khIp;Status=$status;Latency=$lat;BW=$bw})
-    Start-Sleep 1
 }
 
 # ═══ RESULTS ═══
@@ -454,15 +606,80 @@ Write-Host "  Tests: $($tests.Count) scenarios x $pairs pairs = $total total" -F
 Write-Host ""
 
 if (-not $DryRun) {
-    Write-Host "  ====== Install ======" -Fore Cyan
+    # Open persistent SSH sessions to all servers
+    Write-Host "  ====== Connect ======" -Fore Cyan
     $seen = @{}
     foreach ($ir in $IranServers) {
         $fip = $ir.IPs[0]
-        if (-not $seen.ContainsKey($fip)) { Install-On $ir.Name $fip $ir.Port $ir.User; $seen[$fip] = $true }
+        if (-not $seen.ContainsKey($fip)) {
+            Write-Host "  [$($ir.Name)] $fip " -NoNewline
+            if (Open-PersistentSsh $fip $ir.Port $ir.User) { Write-Host "connected" -Fore Green } else { Write-Host "FAILED" -Fore Red }
+            $seen[$fip] = $true
+        }
     }
     foreach ($kh in $KharejServers) {
         $fip = $kh.IPs[0]
-        if (-not $seen.ContainsKey($fip)) { Install-On $kh.Name $fip $kh.Port $kh.User; $seen[$fip] = $true }
+        if (-not $seen.ContainsKey($fip)) {
+            Write-Host "  [$($kh.Name)] $fip " -NoNewline
+            if (Open-PersistentSsh $fip $kh.Port $kh.User) { Write-Host "connected" -Fore Green } else { Write-Host "FAILED" -Fore Red }
+            $seen[$fip] = $true
+        }
+    }
+    # Also open sessions for extra IPs
+    foreach ($ir in $IranServers) {
+        foreach ($ip in $ir.IPs) {
+            if (-not $seen.ContainsKey($ip)) {
+                Open-PersistentSsh $ip $ir.Port $ir.User | Out-Null
+                $seen[$ip] = $true
+            }
+        }
+    }
+    foreach ($kh in $KharejServers) {
+        foreach ($ip in $kh.IPs) {
+            if (-not $seen.ContainsKey($ip)) {
+                Open-PersistentSsh $ip $kh.Port $kh.User | Out-Null
+                $seen[$ip] = $true
+            }
+        }
+    }
+    Write-Host "  Sessions: $($script:Sessions.Count) open" -Fore DarkGray
+
+    # Bidirectional ping check — every IP pair
+    Write-Host ""
+    Write-Host "  ====== Ping Check ======" -Fore Cyan
+    foreach ($ir in $IranServers) {
+        foreach ($kh in $KharejServers) {
+            foreach ($irIp in $ir.IPs) {
+                foreach ($khIp in $kh.IPs) {
+                    Write-Host "  ${irIp} <-> ${khIp}: " -NoNewline
+                    # Iran -> Kharej
+                    $p1 = Invoke-Ssh $irIp $ir.Port $ir.User "ping -c 2 -W 3 $khIp >/dev/null 2>&1 && echo YES || echo NO" 10
+                    # Kharej -> Iran
+                    $p2 = Invoke-Ssh $khIp $kh.Port $kh.User "ping -c 2 -W 3 $irIp >/dev/null 2>&1 && echo YES || echo NO" 10
+                    $ir2kh = if ($p1 -eq "YES") { "OK" } else { "X" }
+                    $kh2ir = if ($p2 -eq "YES") { "OK" } else { "X" }
+                    if ($ir2kh -eq "OK" -and $kh2ir -eq "OK") {
+                        Write-Host "IR->KH=$ir2kh  KH->IR=$kh2ir" -Fore Green
+                    } elseif ($ir2kh -eq "OK" -or $kh2ir -eq "OK") {
+                        Write-Host "IR->KH=$ir2kh  KH->IR=$kh2ir" -Fore Yellow
+                    } else {
+                        Write-Host "IR->KH=$ir2kh  KH->IR=$kh2ir" -Fore Red
+                    }
+                }
+            }
+        }
+    }
+
+    Write-Host ""
+    Write-Host "  ====== Install ======" -Fore Cyan
+    $seen2 = @{}
+    foreach ($ir in $IranServers) {
+        $fip = $ir.IPs[0]
+        if (-not $seen2.ContainsKey($fip)) { Install-On $ir.Name $fip $ir.Port $ir.User | Out-Null; $seen2[$fip] = $true }
+    }
+    foreach ($kh in $KharejServers) {
+        $fip = $kh.IPs[0]
+        if (-not $seen2.ContainsKey($fip)) { Install-On $kh.Name $fip $kh.Port $kh.User | Out-Null; $seen2[$fip] = $true }
     }
     Write-Host ""
 }
@@ -482,3 +699,4 @@ foreach ($sc in $tests) {
 
 Write-Host "`n  ====== Summary ======" -Fore Cyan
 Show-Results
+Close-AllSessions
