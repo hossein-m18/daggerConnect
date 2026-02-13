@@ -837,6 +837,18 @@ show_plan() {
 main() {
     parse_args "$@"
     show_banner
+
+    # Check sshpass
+    if ! command -v sshpass &>/dev/null; then
+        echo -e "${YELLOW}⟳ sshpass not found, installing...${NC}"
+        apt-get install -y -qq sshpass >/dev/null 2>&1
+        if ! command -v sshpass &>/dev/null; then
+            echo -e "${RED}❌ sshpass installation failed! Install manually: apt install sshpass${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}✓ sshpass installed${NC}"
+    fi
+
     parse_conf
     show_plan
 
