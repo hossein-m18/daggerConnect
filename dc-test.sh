@@ -3,17 +3,9 @@
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║           DaggerConnect — Batch Testing Tool                    ║
 # ║                                                                  ║
-# ║  ۲۵ تست ترکیبی گلچین‌شده برای مقایسه حالات مختلف              ║
-# ║  هر ترانسپورت با تنظیمات مختص خودش تست میشه                   ║
+# ║  تست خودکار حالات گلچین‌شده DaggerConnect بین چند سرور          ║
+# ║  ~19 تست هوشمند به جای 18 هزار ترکیب                           ║
 # ╚══════════════════════════════════════════════════════════════════╝
-#
-# منطق گلچین:
-#   ─ هر ۶ ترانسپورت × ۳ سطح obfuscation = ۱۸ تست پایه
-#   ─ httpsmux (اصلی‌ترین) + aggressive profile × ۳ obfus = ۳ تست
-#   ─ httpmux + httpsmux با chunked=on = ۲ تست
-#   ─ kcpmux با KCP aggressive = ۱ تست
-#   ─ httpsmux با smux=cpu-efficient = ۱ تست
-#   ─ Total: ۲۵ تست
 
 set -euo pipefail
 
@@ -29,7 +21,7 @@ BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
 
-# ──────────────────── Config ────────────────────
+# ──────────────────── Defaults ────────────────────
 CONF_FILE="servers.conf"
 FILTER_IRAN=""
 FILTER_KHAREJ=""
@@ -38,324 +30,400 @@ QUICK_MODE=false
 DRY_RUN=false
 VERBOSE=false
 
+# Default settings from conf
 PSK="test-dagger-12345"
 TUNNEL_PORT=443
 TEST_PORT=9999
 TEST_DURATION=10
 
+# DaggerConnect paths
 DC_BIN="/usr/local/bin/DaggerConnect"
-DC_CONF="/etc/DaggerConnect"
-DC_SYS="/etc/systemd/system"
-GH_REPO="https://github.com/itsFLoKi/DaggerConnect"
-GH_API="https://api.github.com/repos/itsFLoKi/DaggerConnect/releases/latest"
+DC_CONFIG_DIR="/etc/DaggerConnect"
+DC_SYSTEMD_DIR="/etc/systemd/system"
+GITHUB_REPO="https://github.com/itsFLoKi/DaggerConnect"
+GITHUB_API="https://api.github.com/repos/itsFLoKi/DaggerConnect/releases/latest"
 
+# Results
 declare -a RESULTS=()
-TS=$(date +%Y%m%d_%H%M%S)
+RESULTS_CSV=""
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-declare -a IR_N=() IR_IP=() IR_P=() IR_U=() IR_A=()
-declare -a KH_N=() KH_IP=() KH_P=() KH_U=() KH_A=()
+# ──────────────────── Server storage ────────────────────
+declare -a IRAN_NAMES=()
+declare -a IRAN_IPS=()
+declare -a IRAN_PORTS=()
+declare -a IRAN_USERS=()
+declare -a IRAN_AUTHS=()
 
-# ══════════════════════════════════════════════════════
-#  ۲۵ CURATED SCENARIOS
-# ══════════════════════════════════════════════════════
+declare -a KHAREJ_NAMES=()
+declare -a KHAREJ_IPS=()
+declare -a KHAREJ_PORTS=()
+declare -a KHAREJ_USERS=()
+declare -a KHAREJ_AUTHS=()
+
+# ═══════════════════════════════════════════════════
+#  CURATED TEST SCENARIOS
+# ═══════════════════════════════════════════════════
 #
-# Format: "group|label|transport|profile|obfus|pool|smux|chunked|kcp"
+# Each scenario: "group|label|transport|profile|obfus|pool|smux|chunked|kcp_preset"
 #
-# تمام transport-specific تنظیمات اعمال میشه:
-#   - chunked فقط برای httpmux/httpsmux معنی داره
-#   - kcp فقط برای kcpmux معنی داره
-#   - ssl cert فقط برای wssmux/httpsmux ساخته میشه
+# Groups:
+#   1-transport   6 tests — all transports, default settings
+#   2-profile     2 tests — balanced vs aggressive on httpsmux
+#   3-obfus       3 tests — disabled/balanced/maximum on httpsmux
+#   4-mimicry     4 tests — httpmux+httpsmux × chunked on/off
+#   5-smux        2 tests — balanced vs efficient on httpsmux
+#   6-kcp         2 tests — default vs aggressive KCP on kcpmux
+#
+# Total: ~19 unique tests per server pair
 
 declare -a SCENARIOS=(
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # tcpmux — ساده و سریع (3 تست)
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    "tcpmux|tcp+obfus=off|tcpmux|balanced|disabled|3|balanced|off|default"
-    "tcpmux|tcp+obfus=bal|tcpmux|balanced|balanced|3|balanced|off|default"
-    "tcpmux|tcp+obfus=max|tcpmux|balanced|maximum|3|balanced|off|default"
+    # ── Group 1: Transport Shootout ──
+    # All 6 transports, balanced profile, obfus=balanced, pool=3, smux=balanced
+    "1-transport|tcpmux|tcpmux|balanced|balanced|3|balanced|off|default"
+    "1-transport|kcpmux|kcpmux|balanced|balanced|3|balanced|off|default"
+    "1-transport|wsmux|wsmux|balanced|balanced|3|balanced|off|default"
+    "1-transport|wssmux|wssmux|balanced|balanced|3|balanced|off|default"
+    "1-transport|httpmux|httpmux|balanced|balanced|3|balanced|off|default"
+    "1-transport|httpsmux|httpsmux|balanced|balanced|3|balanced|off|default"
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # kcpmux — UDP، سریع + KCP tuning (4 تست)
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    "kcpmux|kcp+obfus=off|kcpmux|balanced|disabled|3|balanced|off|default"
-    "kcpmux|kcp+obfus=bal|kcpmux|balanced|balanced|3|balanced|off|default"
-    "kcpmux|kcp+obfus=max|kcpmux|balanced|maximum|3|balanced|off|default"
-    "kcpmux|kcp+aggressive|kcpmux|balanced|balanced|3|balanced|off|aggressive"
+    # ── Group 2: Profile Comparison ──
+    # httpsmux with balanced vs aggressive
+    "2-profile|balanced|httpsmux|balanced|balanced|3|balanced|off|default"
+    "2-profile|aggressive|httpsmux|aggressive|balanced|3|balanced|off|default"
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # wsmux — WebSocket (3 تست)
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    "wsmux|ws+obfus=off|wsmux|balanced|disabled|3|balanced|off|default"
-    "wsmux|ws+obfus=bal|wsmux|balanced|balanced|3|balanced|off|default"
-    "wsmux|ws+obfus=max|wsmux|balanced|maximum|3|balanced|off|default"
+    # ── Group 3: Obfuscation Levels ──
+    # httpsmux with disabled / balanced / maximum
+    "3-obfus|disabled|httpsmux|balanced|disabled|3|balanced|off|default"
+    "3-obfus|balanced|httpsmux|balanced|balanced|3|balanced|off|default"
+    "3-obfus|maximum|httpsmux|balanced|maximum|3|balanced|off|default"
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # wssmux — WebSocket + TLS (3 تست)
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    "wssmux|wss+obfus=off|wssmux|balanced|disabled|3|balanced|off|default"
-    "wssmux|wss+obfus=bal|wssmux|balanced|balanced|3|balanced|off|default"
-    "wssmux|wss+obfus=max|wssmux|balanced|maximum|3|balanced|off|default"
+    # ── Group 4: HTTP Mimicry Chunked ──
+    # httpmux and httpsmux with chunked on/off
+    "4-mimicry|httpmux+chunked=off|httpmux|balanced|balanced|3|balanced|off|default"
+    "4-mimicry|httpmux+chunked=on|httpmux|balanced|balanced|3|balanced|on|default"
+    "4-mimicry|httpsmux+chunked=off|httpsmux|balanced|balanced|3|balanced|off|default"
+    "4-mimicry|httpsmux+chunked=on|httpsmux|balanced|balanced|3|balanced|on|default"
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # httpmux — HTTP Mimicry + chunked (4 تست)
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    "httpmux|http+obfus=off|httpmux|balanced|disabled|3|balanced|off|default"
-    "httpmux|http+obfus=bal|httpmux|balanced|balanced|3|balanced|off|default"
-    "httpmux|http+obfus=max|httpmux|balanced|maximum|3|balanced|off|default"
-    "httpmux|http+chunked|httpmux|balanced|balanced|3|balanced|on|default"
+    # ── Group 5: SMUX Preset ──
+    # httpsmux with balanced vs cpu-efficient smux
+    "5-smux|balanced|httpsmux|balanced|balanced|3|balanced|off|default"
+    "5-smux|cpu-efficient|httpsmux|balanced|balanced|3|cpu-efficient|off|default"
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # httpsmux — ⭐ اصلی: TLS+Mimicry + profile/chunked/smux (8 تست)
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # balanced profile × 3 obfus
-    "httpsmux|https+obfus=off|httpsmux|balanced|disabled|3|balanced|off|default"
-    "httpsmux|https+obfus=bal|httpsmux|balanced|balanced|3|balanced|off|default"
-    "httpsmux|https+obfus=max|httpsmux|balanced|maximum|3|balanced|off|default"
-    # aggressive profile × 3 obfus
-    "httpsmux|https+aggr+obfus=off|httpsmux|aggressive|disabled|3|balanced|off|default"
-    "httpsmux|https+aggr+obfus=bal|httpsmux|aggressive|balanced|3|balanced|off|default"
-    "httpsmux|https+aggr+obfus=max|httpsmux|aggressive|maximum|3|balanced|off|default"
-    # chunked on
-    "httpsmux|https+chunked|httpsmux|balanced|balanced|3|balanced|on|default"
-    # smux cpu-efficient
-    "httpsmux|https+smux=eff|httpsmux|balanced|balanced|3|cpu-efficient|off|default"
+    # ── Group 6: KCP Tuning ──
+    # kcpmux with default vs aggressive KCP settings
+    "6-kcp|default|kcpmux|balanced|balanced|3|balanced|off|default"
+    "6-kcp|aggressive|kcpmux|aggressive|balanced|3|balanced|off|aggressive"
 )
-# Total: 3 + 4 + 3 + 3 + 4 + 8 = 25 tests
 
-# ══════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 #  HELP
-# ══════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 
 show_help() {
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║          DaggerConnect — Batch Testing Tool                 ║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "${WHITE}Usage:${NC}  ./dc-test.sh [options]"
+    echo -e "${WHITE}Usage:${NC}"
+    echo "  ./dc-test.sh [options]"
     echo ""
     echo -e "${WHITE}Options:${NC}"
-    echo -e "  ${GREEN}-g, --group <name>${NC}    فقط یه ترانسپورت خاص تست شه"
-    echo -e "                       tcpmux | kcpmux | wsmux | wssmux | httpmux | httpsmux"
-    echo -e "  ${GREEN}-i, --iran <name>${NC}     فیلتر سرور ایران"
-    echo -e "  ${GREEN}-k, --kharej <name>${NC}   فیلتر سرور خارج"
-    echo -e "  ${GREEN}-c, --config <file>${NC}   فایل کانفیگ (پیشفرض: servers.conf)"
-    echo -e "  ${GREEN}-q, --quick${NC}           بدون iperf (فقط اتصال + ping)"
+    echo -e "  ${GREEN}-g, --group <name>${NC}    فقط یه گروه خاص تست شه"
+    echo -e "                       1-transport | 2-profile | 3-obfus | 4-mimicry | 5-smux | 6-kcp"
+    echo -e "  ${GREEN}-i, --iran <name>${NC}     فقط سرور ایران خاص"
+    echo -e "  ${GREEN}-k, --kharej <name>${NC}   فقط سرور خارج خاص"
+    echo -e "  ${GREEN}-c, --config <file>${NC}   مسیر فایل کانفیگ (پیشفرض: servers.conf)"
+    echo -e "  ${GREEN}-q, --quick${NC}           فقط تست اتصال (بدون iperf)"
     echo -e "  ${GREEN}    --dry-run${NC}         فقط config نشون بده"
     echo -e "  ${GREEN}-v, --verbose${NC}         جزئیات بیشتر"
     echo -e "  ${GREEN}-h, --help${NC}            نمایش این راهنما"
     echo ""
-    echo -e "${WHITE}۲۵ Test Scenarios:${NC}"
-    echo -e "  ${YELLOW}tcpmux${NC}    (3)  obfus: off/balanced/maximum"
-    echo -e "  ${YELLOW}kcpmux${NC}    (4)  obfus: off/balanced/maximum + KCP aggressive"
-    echo -e "  ${YELLOW}wsmux${NC}     (3)  obfus: off/balanced/maximum"
-    echo -e "  ${YELLOW}wssmux${NC}    (3)  obfus: off/balanced/maximum"
-    echo -e "  ${YELLOW}httpmux${NC}   (4)  obfus: off/balanced/maximum + chunked=on"
-    echo -e "  ${YELLOW}httpsmux${NC}  (8)  obfus × profile(balanced+aggressive) + chunked=on + smux=efficient"
+    echo -e "${WHITE}Test Groups (${YELLOW}~19 tests${WHITE} total):${NC}"
+    echo -e "  ${YELLOW}1-transport${NC}   ۶ ترانسپورت: tcpmux, kcpmux, wsmux, wssmux, httpmux, httpsmux"
+    echo -e "  ${YELLOW}2-profile${NC}     ۲ پروفایل: balanced, aggressive"
+    echo -e "  ${YELLOW}3-obfus${NC}       ۳ سطح: disabled, balanced, maximum"
+    echo -e "  ${YELLOW}4-mimicry${NC}     ۴ حالت: httpmux/httpsmux × chunked on/off"
+    echo -e "  ${YELLOW}5-smux${NC}        ۲ پریست: balanced, cpu-efficient"
+    echo -e "  ${YELLOW}6-kcp${NC}         ۲ حالت: default, aggressive KCP"
     echo ""
     echo -e "${WHITE}Examples:${NC}"
-    echo "  ./dc-test.sh                        # همه ۲۵ تست"
-    echo "  ./dc-test.sh -g httpsmux             # فقط ۸ تست httpsmux"
-    echo "  ./dc-test.sh -g kcpmux --quick       # فقط kcpmux بدون iperf"
-    echo "  ./dc-test.sh -i ir1 -k kh1           # فقط بین ir1 و kh1"
-    echo "  ./dc-test.sh --dry-run -v             # نمایش config بدون اجرا"
+    echo "  ./dc-test.sh                              # همه ۱۹ تست"
+    echo "  ./dc-test.sh -g 1-transport               # فقط ۶ ترانسپورت"
+    echo "  ./dc-test.sh -g 4-mimicry -i ir1 -k kh1   # mimicry بین ir1 و kh1"
+    echo "  ./dc-test.sh --quick                       # بدون iperf"
+    echo "  ./dc-test.sh --dry-run                     # فقط config ببین"
     echo ""
 }
 
-# ══════════════════════════════════════════════════════
-#  PARSE ARGS
-# ══════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
+#  PARSE ARGUMENTS
+# ══════════════════════════════════════════════════════════════
 
 parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -g|--group)   FILTER_GROUP="$2"; shift 2 ;;
-            -i|--iran)    FILTER_IRAN="$2"; shift 2 ;;
-            -k|--kharej)  FILTER_KHAREJ="$2"; shift 2 ;;
-            -c|--config)  CONF_FILE="$2"; shift 2 ;;
-            -q|--quick)   QUICK_MODE=true; shift ;;
-            --dry-run)    DRY_RUN=true; shift ;;
-            -v|--verbose) VERBOSE=true; shift ;;
-            -h|--help)    show_help; exit 0 ;;
-            *) echo -e "${RED}❌ Unknown: $1${NC}"; show_help; exit 1 ;;
+            -g|--group)
+                FILTER_GROUP="$2"; shift 2 ;;
+            -i|--iran)
+                FILTER_IRAN="$2"; shift 2 ;;
+            -k|--kharej)
+                FILTER_KHAREJ="$2"; shift 2 ;;
+            -c|--config)
+                CONF_FILE="$2"; shift 2 ;;
+            -q|--quick)
+                QUICK_MODE=true; shift ;;
+            --dry-run)
+                DRY_RUN=true; shift ;;
+            -v|--verbose)
+                VERBOSE=true; shift ;;
+            -h|--help)
+                show_help; exit 0 ;;
+            *)
+                echo -e "${RED}❌ Unknown option: $1${NC}"
+                show_help; exit 1 ;;
         esac
     done
+
+    if [[ -n "$FILTER_GROUP" ]]; then
+        if [[ ! "$FILTER_GROUP" =~ ^(1-transport|2-profile|3-obfus|4-mimicry|5-smux|6-kcp)$ ]]; then
+            echo -e "${RED}❌ گروه نامعتبر: $FILTER_GROUP${NC}"
+            echo "  مقادیر مجاز: 1-transport, 2-profile, 3-obfus, 4-mimicry, 5-smux, 6-kcp"
+            exit 1
+        fi
+    fi
 }
 
-# ══════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 #  PARSE servers.conf
-# ══════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 
 parse_conf() {
-    [[ ! -f "$CONF_FILE" ]] && { echo -e "${RED}❌ $CONF_FILE not found! cp servers.conf.example servers.conf${NC}"; exit 1; }
+    if [[ ! -f "$CONF_FILE" ]]; then
+        echo -e "${RED}❌ فایل $CONF_FILE پیدا نشد!${NC}"
+        echo -e "  ${CYAN}cp servers.conf.example servers.conf && nano servers.conf${NC}"
+        exit 1
+    fi
 
-    local sec=""
+    local section=""
     while IFS= read -r line || [[ -n "$line" ]]; do
         line=$(echo "$line" | sed 's/#.*//' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
         [[ -z "$line" ]] && continue
-        [[ "$line" =~ ^\[(.+)\]$ ]] && { sec="${BASH_REMATCH[1]}"; continue; }
 
-        case "$sec" in
+        if [[ "$line" =~ ^\[(.+)\]$ ]]; then
+            section="${BASH_REMATCH[1]}"
+            continue
+        fi
+
+        case "$section" in
             iran|kharej)
                 if [[ "$line" =~ ^([a-zA-Z0-9_-]+)[[:space:]]*=[[:space:]]*(.+)$ ]]; then
-                    local nm="${BASH_REMATCH[1]}" rest="${BASH_REMATCH[2]}"
-                    IFS='|' read -ra p <<< "$rest"
-                    [[ ${#p[@]} -lt 4 ]] && continue
-                    local ips=$(echo "${p[0]}" | tr -d ' ')
-                    local port=$(echo "${p[1]}" | tr -d ' ')
-                    local usr=$(echo "${p[2]}" | tr -d ' ')
-                    local auth=$(echo "${p[3]}" | tr -d ' ')
-                    if [[ "$sec" == "iran" ]]; then
-                        IR_N+=("$nm"); IR_IP+=("$ips"); IR_P+=("$port"); IR_U+=("$usr"); IR_A+=("$auth")
-                    else
-                        KH_N+=("$nm"); KH_IP+=("$ips"); KH_P+=("$port"); KH_U+=("$usr"); KH_A+=("$auth")
+                    local name="${BASH_REMATCH[1]}"
+                    local rest="${BASH_REMATCH[2]}"
+                    IFS='|' read -ra parts <<< "$rest"
+                    if [[ ${#parts[@]} -lt 4 ]]; then
+                        echo -e "${YELLOW}⚠️  خط نامعتبر: $line${NC}"; continue
                     fi
-                fi ;;
+                    local ips_str=$(echo "${parts[0]}" | tr -d ' ')
+                    local ssh_port=$(echo "${parts[1]}" | tr -d ' ')
+                    local user=$(echo "${parts[2]}" | tr -d ' ')
+                    local auth=$(echo "${parts[3]}" | tr -d ' ')
+
+                    if [[ "$section" == "iran" ]]; then
+                        IRAN_NAMES+=("$name"); IRAN_IPS+=("$ips_str")
+                        IRAN_PORTS+=("$ssh_port"); IRAN_USERS+=("$user"); IRAN_AUTHS+=("$auth")
+                    else
+                        KHAREJ_NAMES+=("$name"); KHAREJ_IPS+=("$ips_str")
+                        KHAREJ_PORTS+=("$ssh_port"); KHAREJ_USERS+=("$user"); KHAREJ_AUTHS+=("$auth")
+                    fi
+                fi
+                ;;
             settings)
-                [[ "$line" =~ ^psk[[:space:]]*=[[:space:]]*(.+)$ ]] && PSK="${BASH_REMATCH[1]}"
-                [[ "$line" =~ ^tunnel_port[[:space:]]*=[[:space:]]*([0-9]+)$ ]] && TUNNEL_PORT="${BASH_REMATCH[1]}"
-                [[ "$line" =~ ^test_port[[:space:]]*=[[:space:]]*([0-9]+)$ ]] && TEST_PORT="${BASH_REMATCH[1]}"
-                [[ "$line" =~ ^test_duration[[:space:]]*=[[:space:]]*([0-9]+)$ ]] && TEST_DURATION="${BASH_REMATCH[1]}"
+                if [[ "$line" =~ ^psk[[:space:]]*=[[:space:]]*(.+)$ ]]; then
+                    PSK="${BASH_REMATCH[1]}"
+                elif [[ "$line" =~ ^tunnel_port[[:space:]]*=[[:space:]]*([0-9]+)$ ]]; then
+                    TUNNEL_PORT="${BASH_REMATCH[1]}"
+                elif [[ "$line" =~ ^test_port[[:space:]]*=[[:space:]]*([0-9]+)$ ]]; then
+                    TEST_PORT="${BASH_REMATCH[1]}"
+                elif [[ "$line" =~ ^test_duration[[:space:]]*=[[:space:]]*([0-9]+)$ ]]; then
+                    TEST_DURATION="${BASH_REMATCH[1]}"
+                fi
                 ;;
         esac
     done < "$CONF_FILE"
 
-    # Filters
+    # Apply filters
     if [[ -n "$FILTER_IRAN" ]]; then
-        local f=false
-        for i in "${!IR_N[@]}"; do
-            if [[ "${IR_N[$i]}" == "$FILTER_IRAN" ]]; then
-                local n="${IR_N[$i]}" ip="${IR_IP[$i]}" p="${IR_P[$i]}" u="${IR_U[$i]}" a="${IR_A[$i]}"
-                IR_N=("$n"); IR_IP=("$ip"); IR_P=("$p"); IR_U=("$u"); IR_A=("$a"); f=true; break
+        local found=false
+        for i in "${!IRAN_NAMES[@]}"; do
+            if [[ "${IRAN_NAMES[$i]}" == "$FILTER_IRAN" ]]; then
+                local n="${IRAN_NAMES[$i]}" ip="${IRAN_IPS[$i]}" p="${IRAN_PORTS[$i]}" u="${IRAN_USERS[$i]}" a="${IRAN_AUTHS[$i]}"
+                IRAN_NAMES=("$n"); IRAN_IPS=("$ip"); IRAN_PORTS=("$p"); IRAN_USERS=("$u"); IRAN_AUTHS=("$a")
+                found=true; break
             fi
         done
-        $f || { echo -e "${RED}❌ Iran '$FILTER_IRAN' not found${NC}"; exit 1; }
+        $found || { echo -e "${RED}❌ سرور ایران '$FILTER_IRAN' پیدا نشد!${NC}"; exit 1; }
     fi
     if [[ -n "$FILTER_KHAREJ" ]]; then
-        local f=false
-        for i in "${!KH_N[@]}"; do
-            if [[ "${KH_N[$i]}" == "$FILTER_KHAREJ" ]]; then
-                local n="${KH_N[$i]}" ip="${KH_IP[$i]}" p="${KH_P[$i]}" u="${KH_U[$i]}" a="${KH_A[$i]}"
-                KH_N=("$n"); KH_IP=("$ip"); KH_P=("$p"); KH_U=("$u"); KH_A=("$a"); f=true; break
+        local found=false
+        for i in "${!KHAREJ_NAMES[@]}"; do
+            if [[ "${KHAREJ_NAMES[$i]}" == "$FILTER_KHAREJ" ]]; then
+                local n="${KHAREJ_NAMES[$i]}" ip="${KHAREJ_IPS[$i]}" p="${KHAREJ_PORTS[$i]}" u="${KHAREJ_USERS[$i]}" a="${KHAREJ_AUTHS[$i]}"
+                KHAREJ_NAMES=("$n"); KHAREJ_IPS=("$ip"); KHAREJ_PORTS=("$p"); KHAREJ_USERS=("$u"); KHAREJ_AUTHS=("$a")
+                found=true; break
             fi
         done
-        $f || { echo -e "${RED}❌ Kharej '$FILTER_KHAREJ' not found${NC}"; exit 1; }
+        $found || { echo -e "${RED}❌ سرور خارج '$FILTER_KHAREJ' پیدا نشد!${NC}"; exit 1; }
     fi
 
-    [[ ${#IR_N[@]} -eq 0 ]] && { echo -e "${RED}❌ No Iran servers${NC}"; exit 1; }
-    [[ ${#KH_N[@]} -eq 0 ]] && { echo -e "${RED}❌ No Kharej servers${NC}"; exit 1; }
+    [[ ${#IRAN_NAMES[@]} -eq 0 ]] && { echo -e "${RED}❌ هیچ سرور ایرانی تعریف نشده!${NC}"; exit 1; }
+    [[ ${#KHAREJ_NAMES[@]} -eq 0 ]] && { echo -e "${RED}❌ هیچ سرور خارجی تعریف نشده!${NC}"; exit 1; }
 }
 
-# ══════════════════════════════════════════════════════
-#  SSH
-# ══════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
+#  SSH HELPERS
+# ══════════════════════════════════════════════════════════════
 
 run_ssh() {
     local ip="$1" port="$2" user="$3" auth="$4"; shift 4
+    local cmd="$*"
     local opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o LogLevel=ERROR"
+
     if [[ "$auth" == /* ]]; then
-        ssh $opts -i "$auth" -p "$port" "${user}@${ip}" "$*" 2>/dev/null
+        ssh $opts -i "$auth" -p "$port" "${user}@${ip}" "$cmd" 2>/dev/null
     else
-        sshpass -p "$auth" ssh $opts -p "$port" "${user}@${ip}" "$*" 2>/dev/null
+        sshpass -p "$auth" ssh $opts -p "$port" "${user}@${ip}" "$cmd" 2>/dev/null
     fi
 }
 
-# ══════════════════════════════════════════════════════
-#  INSTALL
-# ══════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
+#  INSTALL DC + IPERF3
+# ══════════════════════════════════════════════════════════════
 
-install_on() {
-    local lbl="$1" ip="$2" port="$3" user="$4" auth="$5"
-    echo -ne "  ${DIM}[$lbl] $ip...${NC}"
+install_on_server() {
+    local label="$1" ip="$2" port="$3" user="$4" auth="$5"
 
-    local ok=$(run_ssh "$ip" "$port" "$user" "$auth" "test -f $DC_BIN && echo y || echo n")
-    if [[ "$ok" == "y" ]]; then
-        echo -e "\r  ${GREEN}✓${NC} [$lbl] $ip — DC ✔            "
+    echo -ne "  ${DIM}[$label] $ip — checking...${NC}"
+
+    local dc_ok=$(run_ssh "$ip" "$port" "$user" "$auth" "test -f $DC_BIN && echo yes || echo no")
+    if [[ "$dc_ok" == "yes" ]]; then
+        echo -e "\r  ${GREEN}✓${NC} [$label] $ip — DaggerConnect ✔          "
     else
-        echo -e "\r  ${YELLOW}⟳${NC} [$lbl] $ip — Installing DC..."
+        echo -e "\r  ${YELLOW}⟳${NC} [$label] $ip — Installing DaggerConnect..."
         run_ssh "$ip" "$port" "$user" "$auth" "
             apt-get update -qq >/dev/null 2>&1
             apt-get install -y -qq curl wget jq sshpass >/dev/null 2>&1
-            mkdir -p $DC_CONF
-            URL=\$(curl -s $GH_API 2>/dev/null | jq -r '.assets[]|select(.name==\"DaggerConnect\")|.browser_download_url' 2>/dev/null)
-            [[ -n \"\$URL\" && \"\$URL\" != \"null\" ]] && wget -q -O $DC_BIN \"\$URL\" || wget -q -O $DC_BIN ${GH_REPO}/releases/latest/download/DaggerConnect
+            mkdir -p $DC_CONFIG_DIR
+            DOWNLOAD_URL=\$(curl -s $GITHUB_API 2>/dev/null | jq -r '.assets[] | select(.name==\"DaggerConnect\") | .browser_download_url' 2>/dev/null)
+            if [[ -n \"\$DOWNLOAD_URL\" && \"\$DOWNLOAD_URL\" != \"null\" ]]; then
+                wget -q -O $DC_BIN \"\$DOWNLOAD_URL\"
+            else
+                wget -q -O $DC_BIN ${GITHUB_REPO}/releases/latest/download/DaggerConnect
+            fi
             chmod +x $DC_BIN
-        " && echo -e "  ${GREEN}✓${NC} [$lbl] $ip — DC installed" \
-          || { echo -e "  ${RED}✖${NC} [$lbl] $ip — FAILED!"; return 1; }
+        " && echo -e "  ${GREEN}✓${NC} [$label] $ip — DaggerConnect installed" \
+          || { echo -e "  ${RED}✖${NC} [$label] $ip — install FAILED!"; return 1; }
     fi
 
     if ! $QUICK_MODE; then
-        local iok=$(run_ssh "$ip" "$port" "$user" "$auth" "which iperf3 >/dev/null 2>&1 && echo y || echo n")
-        [[ "$iok" != "y" ]] && {
+        local iperf_ok=$(run_ssh "$ip" "$port" "$user" "$auth" "which iperf3 >/dev/null 2>&1 && echo yes || echo no")
+        if [[ "$iperf_ok" != "yes" ]]; then
             run_ssh "$ip" "$port" "$user" "$auth" "apt-get install -y -qq iperf3 >/dev/null 2>&1"
-            echo -e "  ${GREEN}✓${NC} [$lbl] $ip — iperf3 ✔"
-        }
+            echo -e "  ${GREEN}✓${NC} [$label] $ip — iperf3 installed"
+        fi
     fi
 }
 
-# ══════════════════════════════════════════════════════
-#  YAML BLOCKS
-# ══════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
+#  YAML BUILDING BLOCKS
+# ══════════════════════════════════════════════════════════════
 
-obfus_yaml() {
+get_obfus_block() {
     case "$1" in
-        disabled) echo "obfuscation:
-  enabled: false" ;;
-        balanced) echo "obfuscation:
+        disabled) echo 'obfuscation:
+  enabled: false' ;;
+        light) echo 'obfuscation:
+  enabled: true
+  min_padding: 8
+  max_padding: 256
+  min_delay_ms: 2
+  max_delay_ms: 20
+  burst_chance: 0.1' ;;
+        balanced) echo 'obfuscation:
   enabled: true
   min_padding: 16
   max_padding: 512
   min_delay_ms: 5
   max_delay_ms: 50
-  burst_chance: 0.15" ;;
-        maximum) echo "obfuscation:
+  burst_chance: 0.15' ;;
+        heavy) echo 'obfuscation:
+  enabled: true
+  min_padding: 64
+  max_padding: 2048
+  min_delay_ms: 15
+  max_delay_ms: 150
+  burst_chance: 0.25' ;;
+        maximum) echo 'obfuscation:
   enabled: true
   min_padding: 128
   max_padding: 2048
   min_delay_ms: 15
   max_delay_ms: 150
-  burst_chance: 0.3" ;;
+  burst_chance: 0.3' ;;
     esac
 }
 
-smux_yaml() {
+get_smux_block() {
     case "$1" in
-        balanced) echo "smux:
+        gaming) echo 'smux:
+  keepalive: 2
+  max_recv: 16777216
+  max_stream: 16777216
+  frame_size: 32768
+  version: 2' ;;
+        aggressive) echo 'smux:
+  keepalive: 5
+  max_recv: 16777216
+  max_stream: 16777216
+  frame_size: 32768
+  version: 2' ;;
+        balanced) echo 'smux:
   keepalive: 8
   max_recv: 8388608
   max_stream: 8388608
   frame_size: 16384
-  version: 2" ;;
-        cpu-efficient) echo "smux:
+  version: 2' ;;
+        cpu-efficient) echo 'smux:
   keepalive: 10
   max_recv: 8388608
   max_stream: 8388608
   frame_size: 8192
-  version: 2" ;;
+  version: 2' ;;
     esac
 }
 
-kcp_yaml() {
+get_kcp_block() {
     case "$1" in
-        default) echo "kcp:
+        default) echo 'kcp:
   nodelay: 1
   interval: 10
   resend: 2
   nc: 1
   sndwnd: 256
   rcvwnd: 256
-  mtu: 1200" ;;
-        aggressive) echo "kcp:
+  mtu: 1200' ;;
+        aggressive) echo 'kcp:
   nodelay: 1
   interval: 5
   resend: 2
   nc: 1
   sndwnd: 1024
   rcvwnd: 1024
-  mtu: 1200" ;;
+  mtu: 1200' ;;
     esac
 }
 
-mimicry_yaml() {
+get_mimicry_block() {
     local chunked="$1"
     echo "http_mimic:
   fake_domain: \"www.google.com\"
@@ -368,8 +436,62 @@ mimicry_yaml() {
     - \"Accept-Encoding: gzip, deflate, br\""
 }
 
-advanced_yaml() {
-    echo "advanced:
+# ══════════════════════════════════════════════════════════════
+#  GENERATE FULL CONFIGS
+# ══════════════════════════════════════════════════════════════
+
+generate_server_yaml() {
+    local transport="$1" profile="$2" obfus="$3" smux="$4" chunked="$5" kcp="$6"
+
+    cat <<EOF
+mode: "server"
+listen: "0.0.0.0:${TUNNEL_PORT}"
+transport: "${transport}"
+psk: "${PSK}"
+profile: "${profile}"
+verbose: true
+heartbeat: 2
+EOF
+
+    # TLS cert
+    if [[ "$transport" == "wssmux" || "$transport" == "httpsmux" ]]; then
+        echo ""
+        echo "cert_file: \"${DC_CONFIG_DIR}/certs/cert.pem\""
+        echo "key_file: \"${DC_CONFIG_DIR}/certs/key.pem\""
+    fi
+
+    # Port maps
+    echo ""
+    echo "maps:"
+    echo "  - type: tcp"
+    echo "    bind: \"0.0.0.0:${TEST_PORT}\""
+    echo "    target: \"127.0.0.1:${TEST_PORT}\""
+    if ! $QUICK_MODE; then
+        echo "  - type: tcp"
+        echo "    bind: \"0.0.0.0:5201\""
+        echo "    target: \"127.0.0.1:5201\""
+    fi
+
+    echo ""
+    get_obfus_block "$obfus"
+    echo ""
+    get_smux_block "$smux"
+
+    # KCP block for kcpmux
+    if [[ "$transport" == "kcpmux" ]]; then
+        echo ""
+        get_kcp_block "$kcp"
+    fi
+
+    # HTTP mimicry for http transports
+    if [[ "$transport" == "httpmux" || "$transport" == "httpsmux" ]]; then
+        echo ""
+        get_mimicry_block "$chunked"
+    fi
+
+    echo ""
+    cat <<'EOF'
+advanced:
   tcp_nodelay: true
   tcp_keepalive: 3
   tcp_read_buffer: 32768
@@ -381,334 +503,415 @@ advanced_yaml() {
   max_connections: 300
   max_udp_flows: 150
   udp_flow_timeout: 90
-  udp_buffer_size: 262144"
+  udp_buffer_size: 262144
+EOF
 }
 
-# ══════════════════════════════════════════════════════
-#  GENERATE CONFIGS
-# ══════════════════════════════════════════════════════
+generate_client_yaml() {
+    local transport="$1" profile="$2" obfus="$3" pool="$4" smux="$5" chunked="$6" kcp="$7" iran_ip="$8"
 
-gen_server() {
-    local tr="$1" prof="$2" obf="$3" smx="$4" ch="$5" kp="$6"
-
-    echo "mode: \"server\"
-listen: \"0.0.0.0:${TUNNEL_PORT}\"
-transport: \"${tr}\"
-psk: \"${PSK}\"
-profile: \"${prof}\"
-verbose: true
-heartbeat: 2"
-
-    [[ "$tr" == "wssmux" || "$tr" == "httpsmux" ]] && echo "
-cert_file: \"${DC_CONF}/certs/cert.pem\"
-key_file: \"${DC_CONF}/certs/key.pem\""
-
-    echo "
-maps:
-  - type: tcp
-    bind: \"0.0.0.0:${TEST_PORT}\"
-    target: \"127.0.0.1:${TEST_PORT}\""
-    $QUICK_MODE || echo "  - type: tcp
-    bind: \"0.0.0.0:5201\"
-    target: \"127.0.0.1:5201\""
-
-    echo ""
-    obfus_yaml "$obf"
-    echo ""
-    smux_yaml "$smx"
-    [[ "$tr" == "kcpmux" ]] && { echo ""; kcp_yaml "$kp"; }
-    [[ "$tr" == "httpmux" || "$tr" == "httpsmux" ]] && { echo ""; mimicry_yaml "$ch"; }
-    echo ""
-    advanced_yaml
-}
-
-gen_client() {
-    local tr="$1" prof="$2" obf="$3" pool="$4" smx="$5" ch="$6" kp="$7" iran_ip="$8"
-
-    echo "mode: \"client\"
-psk: \"${PSK}\"
-profile: \"${prof}\"
+    cat <<EOF
+mode: "client"
+psk: "${PSK}"
+profile: "${profile}"
 verbose: true
 heartbeat: 2
 
 paths:
-  - transport: \"${tr}\"
-    addr: \"${iran_ip}:${TUNNEL_PORT}\"
+  - transport: "${transport}"
+    addr: "${iran_ip}:${TUNNEL_PORT}"
     connection_pool: ${pool}
     aggressive_pool: true
     retry_interval: 1
-    dial_timeout: 5"
+    dial_timeout: 5
+EOF
 
     echo ""
-    obfus_yaml "$obf"
+    get_obfus_block "$obfus"
     echo ""
-    smux_yaml "$smx"
-    [[ "$tr" == "kcpmux" ]] && { echo ""; kcp_yaml "$kp"; }
-    [[ "$tr" == "httpmux" || "$tr" == "httpsmux" ]] && { echo ""; mimicry_yaml "$ch"; }
+    get_smux_block "$smux"
+
+    if [[ "$transport" == "kcpmux" ]]; then
+        echo ""
+        get_kcp_block "$kcp"
+    fi
+
+    if [[ "$transport" == "httpmux" || "$transport" == "httpsmux" ]]; then
+        echo ""
+        get_mimicry_block "$chunked"
+    fi
+
     echo ""
-    advanced_yaml
+    cat <<'EOF'
+advanced:
+  tcp_nodelay: true
+  tcp_keepalive: 3
+  tcp_read_buffer: 32768
+  tcp_write_buffer: 32768
+  cleanup_interval: 1
+  session_timeout: 15
+  connection_timeout: 20
+  stream_timeout: 45
+  max_connections: 300
+  max_udp_flows: 150
+  udp_flow_timeout: 90
+  udp_buffer_size: 262144
+EOF
 }
 
-# ══════════════════════════════════════════════════════
-#  DEPLOY / STOP
-# ══════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
+#  SSL CERT
+# ══════════════════════════════════════════════════════════════
 
-ensure_cert() {
-    local ip="$1" p="$2" u="$3" a="$4"
-    local ok=$(run_ssh "$ip" "$p" "$u" "$a" "test -f ${DC_CONF}/certs/cert.pem && echo y || echo n")
-    [[ "$ok" != "y" ]] && run_ssh "$ip" "$p" "$u" "$a" "
-        mkdir -p ${DC_CONF}/certs
-        openssl req -x509 -newkey rsa:2048 -keyout ${DC_CONF}/certs/key.pem \
-            -out ${DC_CONF}/certs/cert.pem -days 365 -nodes -subj '/CN=www.google.com' 2>/dev/null"
+ensure_ssl_cert() {
+    local ip="$1" port="$2" user="$3" auth="$4"
+    local exists=$(run_ssh "$ip" "$port" "$user" "$auth" "test -f ${DC_CONFIG_DIR}/certs/cert.pem && echo y || echo n")
+    if [[ "$exists" != "y" ]]; then
+        run_ssh "$ip" "$port" "$user" "$auth" "
+            mkdir -p ${DC_CONFIG_DIR}/certs
+            openssl req -x509 -newkey rsa:2048 -keyout ${DC_CONFIG_DIR}/certs/key.pem \
+                -out ${DC_CONFIG_DIR}/certs/cert.pem -days 365 -nodes \
+                -subj '/CN=www.google.com' 2>/dev/null
+        "
+    fi
 }
 
-deploy() {
-    local role="$1" ip="$2" p="$3" u="$4" a="$5" yaml="$6" tr="$7"
+# ══════════════════════════════════════════════════════════════
+#  DEPLOY + START / STOP
+# ══════════════════════════════════════════════════════════════
 
-    run_ssh "$ip" "$p" "$u" "$a" "mkdir -p $DC_CONF; cat > ${DC_CONF}/${role}.yaml << 'DCEOF'
+deploy_and_start() {
+    local role="$1" ip="$2" port="$3" user="$4" auth="$5" yaml="$6" transport="$7"
+
+    run_ssh "$ip" "$port" "$user" "$auth" "mkdir -p $DC_CONFIG_DIR; cat > ${DC_CONFIG_DIR}/${role}.yaml << 'DCEOF'
 ${yaml}
 DCEOF"
 
-    [[ "$role" == "server" && ("$tr" == "wssmux" || "$tr" == "httpsmux") ]] && ensure_cert "$ip" "$p" "$u" "$a"
+    if [[ "$role" == "server" && ("$transport" == "wssmux" || "$transport" == "httpsmux") ]]; then
+        ensure_ssl_cert "$ip" "$port" "$user" "$auth"
+    fi
 
-    run_ssh "$ip" "$p" "$u" "$a" "
-        cat > ${DC_SYS}/DaggerConnect-${role}.service << 'EOF'
+    run_ssh "$ip" "$port" "$user" "$auth" "
+        cat > ${DC_SYSTEMD_DIR}/DaggerConnect-${role}.service << 'SVCEOF'
 [Unit]
 Description=DaggerConnect ${role}
 After=network.target
 [Service]
 Type=simple
-ExecStart=${DC_BIN} -c ${DC_CONF}/${role}.yaml
+User=root
+WorkingDirectory=${DC_CONFIG_DIR}
+ExecStart=${DC_BIN} -c ${DC_CONFIG_DIR}/${role}.yaml
 Restart=always
 RestartSec=3
 LimitNOFILE=1048576
 [Install]
 WantedBy=multi-user.target
-EOF
+SVCEOF
         systemctl daemon-reload
         systemctl stop DaggerConnect-${role} 2>/dev/null || true
         sleep 1
-        systemctl start DaggerConnect-${role}"
+        systemctl start DaggerConnect-${role}
+    "
 }
 
 stop_dc() {
-    local role="$1" ip="$2" p="$3" u="$4" a="$5"
-    run_ssh "$ip" "$p" "$u" "$a" "systemctl stop DaggerConnect-${role} 2>/dev/null || true"
+    local role="$1" ip="$2" port="$3" user="$4" auth="$5"
+    run_ssh "$ip" "$port" "$user" "$auth" "systemctl stop DaggerConnect-${role} 2>/dev/null || true"
 }
 
-# ══════════════════════════════════════════════════════
-#  TESTING
-# ══════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
+#  TESTS
+# ══════════════════════════════════════════════════════════════
 
-wait_tunnel() {
+wait_for_tunnel() {
+    local ir_ip="$1" ir_p="$2" ir_u="$3" ir_a="$4"
+    local kh_ip="$5" kh_p="$6" kh_u="$7" kh_a="$8"
     local w=0
+
     while [[ $w -lt 20 ]]; do
-        local s=$(run_ssh "$1" "$2" "$3" "$4" "systemctl is-active DaggerConnect-server 2>/dev/null || echo x")
-        local c=$(run_ssh "$5" "$6" "$7" "$8" "systemctl is-active DaggerConnect-client 2>/dev/null || echo x")
-        if [[ "$s" == "active" && "$c" == "active" ]]; then
-            local n=$(run_ssh "$5" "$6" "$7" "$8" "journalctl -u DaggerConnect-client -n 20 --no-pager 2>/dev/null | grep -ci 'session added\|connected\|established' || echo 0")
-            [[ "$n" -gt 0 ]] && return 0
+        local srv=$(run_ssh "$ir_ip" "$ir_p" "$ir_u" "$ir_a" "systemctl is-active DaggerConnect-server 2>/dev/null || echo dead")
+        local cli=$(run_ssh "$kh_ip" "$kh_p" "$kh_u" "$kh_a" "systemctl is-active DaggerConnect-client 2>/dev/null || echo dead")
+
+        if [[ "$srv" == "active" && "$cli" == "active" ]]; then
+            local ok=$(run_ssh "$kh_ip" "$kh_p" "$kh_u" "$kh_a" "journalctl -u DaggerConnect-client -n 20 --no-pager 2>/dev/null | grep -ci 'session added\|connected\|established' || echo 0")
+            [[ "$ok" -gt 0 ]] && return 0
         fi
         sleep 1; w=$((w+1))
     done
     return 1
 }
 
-get_latency() {
-    local lat=$(run_ssh "$1" "$2" "$3" "$4" "ping -c 3 -W 3 $5 2>/dev/null | tail -1 | awk -F'/' '{print \$5}'")
+measure_latency() {
+    local ir_ip="$1" ir_p="$2" ir_u="$3" ir_a="$4" kh_ip="$5"
+    local lat=$(run_ssh "$ir_ip" "$ir_p" "$ir_u" "$ir_a" "ping -c 3 -W 3 ${kh_ip} 2>/dev/null | tail -1 | awk -F'/' '{print \$5}'")
     [[ -n "$lat" ]] && echo "${lat}ms" || echo "-"
 }
 
-get_bandwidth() {
+measure_bandwidth() {
+    local ir_ip="$1" ir_p="$2" ir_u="$3" ir_a="$4"
+    local kh_ip="$5" kh_p="$6" kh_u="$7" kh_a="$8"
+
     $QUICK_MODE && { echo "-"; return; }
 
-    run_ssh "$5" "$6" "$7" "$8" "pkill -f 'iperf3 -s' 2>/dev/null; sleep 0.5; iperf3 -s -p 5201 -D 2>/dev/null"
+    # Start iperf server on kharej
+    run_ssh "$kh_ip" "$kh_p" "$kh_u" "$kh_a" "pkill -f 'iperf3 -s' 2>/dev/null; sleep 0.5; iperf3 -s -p 5201 -D 2>/dev/null"
     sleep 2
 
-    local bw=$(run_ssh "$1" "$2" "$3" "$4" "
+    # Run iperf client through tunnel on iran
+    local bw=$(run_ssh "$ir_ip" "$ir_p" "$ir_u" "$ir_a" "
         iperf3 -c 127.0.0.1 -p 5201 -t ${TEST_DURATION} -P 2 --json 2>/dev/null | \
         python3 -c 'import sys,json;d=json.load(sys.stdin);print(round(d[\"end\"][\"sum_received\"][\"bits_per_second\"]/1e6,1))' 2>/dev/null || echo '-'
     ")
 
-    run_ssh "$5" "$6" "$7" "$8" "pkill -f 'iperf3 -s' 2>/dev/null"
-    [[ -n "$bw" && "$bw" != "-" ]] && echo "${bw}Mbps" || echo "-"
+    run_ssh "$kh_ip" "$kh_p" "$kh_u" "$kh_a" "pkill -f 'iperf3 -s' 2>/dev/null"
+    [[ -n "$bw" && "$bw" != "-" ]] && echo "${bw} Mbps" || echo "-"
 }
 
-# ══════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 #  RUN ONE SCENARIO
-# ══════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 
-run_one() {
-    local sc="$1"
-    local in="$2" iip="$3" ip="$4" iu="$5" ia="$6"
-    local kn="$7" kip="$8" kp="$9" ku="${10}" ka="${11}"
+run_scenario() {
+    local scenario="$1"
+    local ir_name="$2" ir_ip="$3" ir_p="$4" ir_u="$5" ir_a="$6"
+    local kh_name="$7" kh_ip="$8" kh_p="$9" kh_u="${10}" kh_a="${11}"
 
-    IFS='|' read -r grp lbl tr prof obf pool smx ch kcp_p <<< "$sc"
+    IFS='|' read -r group label transport profile obfus pool smux chunked kcp_preset <<< "$scenario"
 
-    local status="❌ FAIL" lat="-" bw="-"
+    local status="❌ FAIL" latency="-" bandwidth="-"
 
+    # DRY RUN
     if $DRY_RUN; then
-        echo -e "  ${CYAN}[DRY]${NC} ${BOLD}${lbl}${NC}  ${DIM}(${tr} prof=${prof} obf=${obf} pool=${pool} smux=${smx} ch=${ch} kcp=${kcp_p})${NC}"
-        $VERBOSE && { echo "--- server.yaml ---"; gen_server "$tr" "$prof" "$obf" "$smx" "$ch" "$kcp_p" | head -12; echo "..."; }
-        RESULTS+=("${in}|${kn}|${grp}|${lbl}|${iip}|${kip}|🔵DRY|-|-")
+        echo -e "  ${CYAN}[DRY]${NC} ${BOLD}${label}${NC} — $transport | $profile | obfus=$obfus | pool=$pool | smux=$smux | chunked=$chunked | kcp=$kcp_preset"
+        if $VERBOSE; then
+            echo "  ─── server.yaml ───"
+            generate_server_yaml "$transport" "$profile" "$obfus" "$smux" "$chunked" "$kcp_preset" | head -15
+            echo "  ..."
+            echo "  ─── client.yaml ───"
+            generate_client_yaml "$transport" "$profile" "$obfus" "$pool" "$smux" "$chunked" "$kcp_preset" "$ir_ip" | head -15
+            echo "  ..."
+        fi
+        RESULTS+=("${ir_name}|${kh_name}|${group}|${label}|${ir_ip}|${kh_ip}|🔵 DRY|-|-")
         return
     fi
 
-    echo -ne "  ${DIM}⏳ ${lbl}...${NC}"
+    echo -ne "  ${DIM}⏳ ${label}...${NC}"
 
-    local sy=$(gen_server "$tr" "$prof" "$obf" "$smx" "$ch" "$kcp_p")
-    local cy=$(gen_client "$tr" "$prof" "$obf" "$pool" "$smx" "$ch" "$kcp_p" "$iip")
+    # Generate YAML
+    local srv_yaml=$(generate_server_yaml "$transport" "$profile" "$obfus" "$smux" "$chunked" "$kcp_preset")
+    local cli_yaml=$(generate_client_yaml "$transport" "$profile" "$obfus" "$pool" "$smux" "$chunked" "$kcp_preset" "$ir_ip")
 
-    stop_dc "server" "$iip" "$ip" "$iu" "$ia"
-    stop_dc "client" "$kip" "$kp" "$ku" "$ka"
+    # Stop previous
+    stop_dc "server" "$ir_ip" "$ir_p" "$ir_u" "$ir_a"
+    stop_dc "client" "$kh_ip" "$kh_p" "$kh_u" "$kh_a"
     sleep 1
 
-    deploy "server" "$iip" "$ip" "$iu" "$ia" "$sy" "$tr"
-    deploy "client" "$kip" "$kp" "$ku" "$ka" "$cy" "$tr"
+    # Deploy
+    deploy_and_start "server" "$ir_ip" "$ir_p" "$ir_u" "$ir_a" "$srv_yaml" "$transport"
+    deploy_and_start "client" "$kh_ip" "$kh_p" "$kh_u" "$kh_a" "$cli_yaml" "$transport"
 
-    if wait_tunnel "$iip" "$ip" "$iu" "$ia" "$kip" "$kp" "$ku" "$ka"; then
+    # Wait & test
+    if wait_for_tunnel "$ir_ip" "$ir_p" "$ir_u" "$ir_a" "$kh_ip" "$kh_p" "$kh_u" "$kh_a"; then
         status="✅ OK"
-        lat=$(get_latency "$iip" "$ip" "$iu" "$ia" "$kip")
-        bw=$(get_bandwidth "$iip" "$ip" "$iu" "$ia" "$kip" "$kp" "$ku" "$ka")
-        echo -e "\r  ${GREEN}✓${NC} ${BOLD}${lbl}${NC} — ${GREEN}OK${NC}  ${CYAN}${lat}${NC}  ${YELLOW}${bw}${NC}              "
+        latency=$(measure_latency "$ir_ip" "$ir_p" "$ir_u" "$ir_a" "$kh_ip")
+        bandwidth=$(measure_bandwidth "$ir_ip" "$ir_p" "$ir_u" "$ir_a" "$kh_ip" "$kh_p" "$kh_u" "$kh_a")
+        echo -e "\r  ${GREEN}✓${NC} ${BOLD}${label}${NC} — ${GREEN}OK${NC}  ping=${CYAN}${latency}${NC}  bw=${YELLOW}${bandwidth}${NC}           "
     else
-        local err=$(run_ssh "$kip" "$kp" "$ku" "$ka" "journalctl -u DaggerConnect-client -n 2 --no-pager 2>/dev/null | tail -1 | cut -c1-50" 2>/dev/null || echo "")
-        echo -e "\r  ${RED}✖${NC} ${BOLD}${lbl}${NC} — ${RED}FAIL${NC}  ${DIM}${err}${NC}              "
+        local err=$(run_ssh "$kh_ip" "$kh_p" "$kh_u" "$kh_a" "journalctl -u DaggerConnect-client -n 3 --no-pager 2>/dev/null | tail -1 | cut -c1-50" 2>/dev/null || echo "")
+        echo -e "\r  ${RED}✖${NC} ${BOLD}${label}${NC} — ${RED}FAIL${NC}  ${DIM}${err}${NC}           "
     fi
 
-    stop_dc "server" "$iip" "$ip" "$iu" "$ia"
-    stop_dc "client" "$kip" "$kp" "$ku" "$ka"
+    # Stop
+    stop_dc "server" "$ir_ip" "$ir_p" "$ir_u" "$ir_a"
+    stop_dc "client" "$kh_ip" "$kh_p" "$kh_u" "$kh_a"
 
-    RESULTS+=("${in}|${kn}|${grp}|${lbl}|${iip}|${kip}|${status}|${lat}|${bw}")
+    RESULTS+=("${ir_name}|${kh_name}|${group}|${label}|${ir_ip}|${kh_ip}|${status}|${latency}|${bandwidth}")
     sleep 1
 }
 
-# ══════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 #  RESULTS TABLE
-# ══════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 
 print_results() {
-    [[ ${#RESULTS[@]} -eq 0 ]] && return
+    [[ ${#RESULTS[@]} -eq 0 ]] && { echo -e "${YELLOW}No results.${NC}"; return; }
 
     echo ""
-    echo -e "${CYAN}╔══════╤════════╤═══════════╤══════════════════════╤══════════╤═════════╤══════════╗${NC}"
-    printf "${CYAN}║${NC}${BOLD}%-6s${NC}${CYAN}│${NC}${BOLD}%-8s${NC}${CYAN}│${NC}${BOLD}%-11s${NC}${CYAN}│${NC}${BOLD}%-22s${NC}${CYAN}│${NC}${BOLD}%-10s${NC}${CYAN}│${NC}${BOLD}%-9s${NC}${CYAN}│${NC}${BOLD}%-10s${NC}${CYAN}║${NC}\n" \
-        " Iran" " Kharej" " Group" " Test" " Status" " Ping" " BW"
-    echo -e "${CYAN}╠══════╪════════╪═══════════╪══════════════════════╪══════════╪═════════╪══════════╣${NC}"
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                             DaggerConnect Test Results                                   ║${NC}"
+    echo -e "${CYAN}╠═══════╤════════╤═════════════╤══════════════════════╤════════════╤════════╤══════════════╣${NC}"
+    printf "${CYAN}║${NC} ${BOLD}%-5s${NC} ${CYAN}│${NC} ${BOLD}%-6s${NC} ${CYAN}│${NC} ${BOLD}%-11s${NC} ${CYAN}│${NC} ${BOLD}%-20s${NC} ${CYAN}│${NC} ${BOLD}%-10s${NC} ${CYAN}│${NC} ${BOLD}%-6s${NC} ${CYAN}│${NC} ${BOLD}%-12s${NC} ${CYAN}║${NC}\n" \
+        "Iran" "Kharej" "Group" "Test" "Status" "Ping" "Bandwidth"
+    echo -e "${CYAN}╠═══════╪════════╪═════════════╪══════════════════════╪════════════╪════════╪══════════════╣${NC}"
 
-    local cg=""
+    local current_group=""
     for r in "${RESULTS[@]}"; do
         IFS='|' read -ra c <<< "$r"
-        local g="${c[2]}"
+        local ir="${c[0]}" kh="${c[1]}" grp="${c[2]}" lbl="${c[3]}" irip="${c[4]}" khip="${c[5]}" st="${c[6]}" lat="${c[7]}" bw="${c[8]}"
 
-        [[ "$g" != "$cg" && -n "$cg" ]] && echo -e "${CYAN}╟──────┼────────┼───────────┼──────────────────────┼──────────┼─────────┼──────────╢${NC}"
-        cg="$g"
+        # Group separator
+        if [[ "$grp" != "$current_group" ]]; then
+            if [[ -n "$current_group" ]]; then
+                echo -e "${CYAN}╠───────┼────────┼─────────────┼──────────────────────┼────────────┼────────┼──────────────╣${NC}"
+            fi
+            current_group="$grp"
+        fi
 
-        local sc=""
-        [[ "${c[6]}" == *"OK"* ]] && sc="${GREEN}${c[6]}${NC}" || sc="${RED}${c[6]}${NC}"
+        # Color status
+        local st_c=""
+        if [[ "$st" == *"OK"* ]]; then st_c="${GREEN}${st}${NC}"
+        elif [[ "$st" == *"DRY"* ]]; then st_c="${CYAN}${st}${NC}"
+        else st_c="${RED}${st}${NC}"; fi
 
-        printf "${CYAN}║${NC} %-5s${CYAN}│${NC} %-7s${CYAN}│${NC} %-10s${CYAN}│${NC} %-21s${CYAN}│${NC} %-17b${CYAN}│${NC} %-8s${CYAN}│${NC} %-9s${CYAN}║${NC}\n" \
-            "${c[0]}" "${c[1]}" "${c[2]}" "${c[3]}" "$sc" "${c[7]}" "${c[8]}"
+        printf "${CYAN}║${NC} %-5s ${CYAN}│${NC} %-6s ${CYAN}│${NC} %-11s ${CYAN}│${NC} %-20s ${CYAN}│${NC} %-19b ${CYAN}│${NC} %-6s ${CYAN}│${NC} %-12s ${CYAN}║${NC}\n" \
+            "$ir" "$kh" "$grp" "$lbl" "$st_c" "$lat" "$bw"
     done
-    echo -e "${CYAN}╚══════╧════════╧═══════════╧══════════════════════╧══════════╧═════════╧══════════╝${NC}"
+
+    echo -e "${CYAN}╚═══════╧════════╧═════════════╧══════════════════════╧════════════╧════════╧══════════════╝${NC}"
 
     # CSV
-    local csv="results_${TS}.csv"
-    echo "Iran,Kharej,Group,Test,Iran_IP,Kharej_IP,Status,Latency,Bandwidth" > "$csv"
-    for r in "${RESULTS[@]}"; do echo "$r" | tr '|' ','; done >> "$csv"
-    echo -e "\n${GREEN}📊 Saved: ${csv}${NC}"
+    RESULTS_CSV="results_${TIMESTAMP}.csv"
+    echo "Iran,Kharej,Group,Test,Iran_IP,Kharej_IP,Status,Latency,Bandwidth" > "$RESULTS_CSV"
+    for r in "${RESULTS[@]}"; do echo "$r" | tr '|' ','; done >> "$RESULTS_CSV"
+    echo ""
+    echo -e "${GREEN}📊 Saved: ${RESULTS_CSV}${NC}"
 
-    local t=${#RESULTS[@]}
-    local p=$(printf '%s\n' "${RESULTS[@]}" | grep -c "OK" || true)
-    echo -e "${WHITE}Total=${t}  ${GREEN}Pass=${p}${NC}  ${RED}Fail=$((t-p))${NC}"
+    # Summary
+    local total=${#RESULTS[@]}
+    local passed=$(printf '%s\n' "${RESULTS[@]}" | grep -c "OK" || true)
+    echo -e "${WHITE}Summary:${NC} Total=$total  ${GREEN}Passed=$passed${NC}  ${RED}Failed=$((total-passed))${NC}"
 }
 
-# ══════════════════════════════════════════════════════
-#  MAIN
-# ══════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
+#  BANNER + PLAN
+# ══════════════════════════════════════════════════════════════
 
-main() {
-    parse_args "$@"
-
+show_banner() {
     echo -e "${CYAN}"
     echo "  ╔══════════════════════════════════════════════╗"
     echo "  ║   DaggerConnect — Batch Testing Tool         ║"
     echo "  ╚══════════════════════════════════════════════╝"
     echo -e "${NC}"
+}
 
-    parse_conf
-
-    # Count filtered scenarios
-    local cnt=0
+show_plan() {
+    # Filter scenarios
+    local count=0
     for s in "${SCENARIOS[@]}"; do
-        IFS='|' read -r g _ <<< "$s"
-        [[ -z "$FILTER_GROUP" || "$g" == "$FILTER_GROUP" ]] && cnt=$((cnt+1))
+        IFS='|' read -r grp rest <<< "$s"
+        if [[ -z "$FILTER_GROUP" || "$grp" == "$FILTER_GROUP" ]]; then
+            count=$((count+1))
+        fi
     done
 
-    # Count pairs
+    # Count server pairs
     local pairs=0
-    for ii in "${!IR_N[@]}"; do
-        IFS=',' read -ra il <<< "${IR_IP[$ii]}"
-        for ki in "${!KH_N[@]}"; do
-            IFS=',' read -ra kl <<< "${KH_IP[$ki]}"
-            for _ in "${il[@]}"; do for _ in "${kl[@]}"; do pairs=$((pairs+1)); done; done
+    for ii in "${!IRAN_NAMES[@]}"; do
+        IFS=',' read -ra irl <<< "${IRAN_IPS[$ii]}"
+        for ki in "${!KHAREJ_NAMES[@]}"; do
+            IFS=',' read -ra khl <<< "${KHAREJ_IPS[$ki]}"
+            for _ in "${irl[@]}"; do for _ in "${khl[@]}"; do pairs=$((pairs+1)); done; done
         done
     done
 
-    echo -e "${WHITE}Servers:${NC}"
-    for i in "${!IR_N[@]}"; do echo -e "  🇮🇷 ${GREEN}${IR_N[$i]}${NC}: ${IR_IP[$i]}"; done
-    for i in "${!KH_N[@]}"; do echo -e "  🌍 ${GREEN}${KH_N[$i]}${NC}: ${KH_IP[$i]}"; done
-    echo ""
-    echo -e "${WHITE}Tests: ${YELLOW}${cnt}${NC} scenarios × ${pairs} pair(s) = ${BOLD}${YELLOW}$((cnt*pairs))${NC} total"
-    [[ -n "$FILTER_GROUP" ]] && echo -e "  ${DIM}(filter: ${FILTER_GROUP})${NC}"
-    echo ""
+    local total=$((count * pairs))
 
-    # Install
+    echo -e "${WHITE}Config:${NC} PSK=${CYAN}${PSK:0:10}...${NC}  Port=${CYAN}${TUNNEL_PORT}${NC}  Quick=${CYAN}${QUICK_MODE}${NC}"
+    echo ""
+    echo -e "${WHITE}Servers:${NC}"
+    for i in "${!IRAN_NAMES[@]}"; do echo -e "  🇮🇷 ${GREEN}${IRAN_NAMES[$i]}${NC}: ${IRAN_IPS[$i]}"; done
+    for i in "${!KHAREJ_NAMES[@]}"; do echo -e "  🌍 ${GREEN}${KHAREJ_NAMES[$i]}${NC}: ${KHAREJ_IPS[$i]}"; done
+    echo ""
+    echo -e "${WHITE}Scenarios: ${YELLOW}${count}${NC} × ${pairs} pair(s) = ${BOLD}${YELLOW}${total} tests${NC}"
+    if [[ -n "$FILTER_GROUP" ]]; then
+        echo -e "  ${DIM}(filtered: only ${FILTER_GROUP})${NC}"
+    fi
+    if ! $QUICK_MODE; then
+        echo -e "${DIM}  Estimated: ~$((total * (TEST_DURATION + 25) / 60)) minutes${NC}"
+    fi
+    echo ""
+}
+
+# ══════════════════════════════════════════════════════════════
+#  MAIN
+# ══════════════════════════════════════════════════════════════
+
+main() {
+    parse_args "$@"
+    show_banner
+    parse_conf
+    show_plan
+
+    # ── Phase 1: Install ──
     if ! $DRY_RUN; then
-        echo -e "${CYAN}══════ Install ══════${NC}"
+        echo -e "${CYAN}══════ Phase 1: Install ══════${NC}"
         declare -A seen=()
-        for i in "${!IR_N[@]}"; do
-            IFS=',' read -ra ips <<< "${IR_IP[$i]}"; local fip="${ips[0]}"
-            [[ -z "${seen[$fip]+x}" ]] && { install_on "${IR_N[$i]}" "$fip" "${IR_P[$i]}" "${IR_U[$i]}" "${IR_A[$i]}"; seen[$fip]=1; }
+        for i in "${!IRAN_NAMES[@]}"; do
+            IFS=',' read -ra ips <<< "${IRAN_IPS[$i]}"
+            local fip="${ips[0]}"
+            if [[ -z "${seen[$fip]+x}" ]]; then
+                install_on_server "${IRAN_NAMES[$i]}" "$fip" "${IRAN_PORTS[$i]}" "${IRAN_USERS[$i]}" "${IRAN_AUTHS[$i]}"
+                seen[$fip]=1
+            fi
         done
-        for i in "${!KH_N[@]}"; do
-            IFS=',' read -ra ips <<< "${KH_IP[$i]}"; local fip="${ips[0]}"
-            [[ -z "${seen[$fip]+x}" ]] && { install_on "${KH_N[$i]}" "$fip" "${KH_P[$i]}" "${KH_U[$i]}" "${KH_A[$i]}"; seen[$fip]=1; }
+        for i in "${!KHAREJ_NAMES[@]}"; do
+            IFS=',' read -ra ips <<< "${KHAREJ_IPS[$i]}"
+            local fip="${ips[0]}"
+            if [[ -z "${seen[$fip]+x}" ]]; then
+                install_on_server "${KHAREJ_NAMES[$i]}" "$fip" "${KHAREJ_PORTS[$i]}" "${KHAREJ_USERS[$i]}" "${KHAREJ_AUTHS[$i]}"
+                seen[$fip]=1
+            fi
         done
         echo ""
     fi
 
-    # Test
-    echo -e "${CYAN}══════ Testing ══════${NC}"
-    local cg=""
-    for sc in "${SCENARIOS[@]}"; do
-        IFS='|' read -r grp _ <<< "$sc"
-        [[ -n "$FILTER_GROUP" && "$grp" != "$FILTER_GROUP" ]] && continue
+    # ── Phase 2: Test ──
+    echo -e "${CYAN}══════ Phase 2: Testing ══════${NC}"
 
-        if [[ "$grp" != "$cg" ]]; then
-            cg="$grp"
-            echo ""
-            echo -e "${BOLD}${WHITE}━━━━━ ${YELLOW}${grp}${WHITE} ━━━━━${NC}"
+    local current_group=""
+    for scenario in "${SCENARIOS[@]}"; do
+        IFS='|' read -r grp rest <<< "$scenario"
+
+        # Filter group
+        if [[ -n "$FILTER_GROUP" && "$grp" != "$FILTER_GROUP" ]]; then
+            continue
         fi
 
-        for ii in "${!IR_N[@]}"; do
-            IFS=',' read -ra il <<< "${IR_IP[$ii]}"
-            for ki in "${!KH_N[@]}"; do
-                IFS=',' read -ra kl <<< "${KH_IP[$ki]}"
-                for iip in "${il[@]}"; do
-                    for kip in "${kl[@]}"; do
-                        run_one "$sc" \
-                            "${IR_N[$ii]}" "$iip" "${IR_P[$ii]}" "${IR_U[$ii]}" "${IR_A[$ii]}" \
-                            "${KH_N[$ki]}" "$kip" "${KH_P[$ki]}" "${KH_U[$ki]}" "${KH_A[$ki]}"
+        # Group header
+        if [[ "$grp" != "$current_group" ]]; then
+            current_group="$grp"
+            echo ""
+            echo -e "${BOLD}${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            case "$grp" in
+                1-transport) echo -e "${BOLD}  📡 Transport Shootout${NC}" ;;
+                2-profile)   echo -e "${BOLD}  ⚡ Profile Comparison${NC}" ;;
+                3-obfus)     echo -e "${BOLD}  🎭 Obfuscation Levels${NC}" ;;
+                4-mimicry)   echo -e "${BOLD}  🌐 HTTP Mimicry Chunked${NC}" ;;
+                5-smux)      echo -e "${BOLD}  📊 SMUX Presets${NC}" ;;
+                6-kcp)       echo -e "${BOLD}  🚀 KCP Tuning${NC}" ;;
+            esac
+            echo -e "${BOLD}${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        fi
+
+        # Loop over server pairs
+        for ii in "${!IRAN_NAMES[@]}"; do
+            IFS=',' read -ra ir_ips <<< "${IRAN_IPS[$ii]}"
+            for ki in "${!KHAREJ_NAMES[@]}"; do
+                IFS=',' read -ra kh_ips <<< "${KHAREJ_IPS[$ki]}"
+                for ir_ip in "${ir_ips[@]}"; do
+                    for kh_ip in "${kh_ips[@]}"; do
+                        run_scenario "$scenario" \
+                            "${IRAN_NAMES[$ii]}" "$ir_ip" "${IRAN_PORTS[$ii]}" "${IRAN_USERS[$ii]}" "${IRAN_AUTHS[$ii]}" \
+                            "${KHAREJ_NAMES[$ki]}" "$kh_ip" "${KHAREJ_PORTS[$ki]}" "${KHAREJ_USERS[$ki]}" "${KHAREJ_AUTHS[$ki]}"
                     done
                 done
             done
         done
     done
 
-    # Results
+    # ── Phase 3: Results ──
     echo ""
-    echo -e "${CYAN}══════ Results ══════${NC}"
+    echo -e "${CYAN}══════ Phase 3: Results ══════${NC}"
     print_results
 }
 
