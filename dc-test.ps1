@@ -249,17 +249,17 @@ function Install-On($label, $ip, $port, $user) {
     $test = Invoke-Ssh $ip $port $user 'echo OK' 10
     if ($test -ne "OK") { Write-Host "X SSH failed!" -Fore Red; return $false }
 
+    # Quick check: if DC already exists, skip everything
+    $dcOk = Invoke-Ssh $ip $port $user "test -f $($script:DCBin) && echo yes || echo no" 10
+    if ($dcOk -eq "yes") { Write-Host "OK (cached)" -Fore Green; return $true }
+
+    # DC not found — install packages + DC
+    Write-Host "installing..." -NoNewline -Fore Yellow
     $out = Invoke-Ssh $ip $port $user 'export DEBIAN_FRONTEND=noninteractive; apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq curl wget jq openssl iperf3 >/dev/null 2>&1; echo PKG_OK' 120
     if ($out -notmatch "PKG_OK") { Write-Host "[pkg warn] " -Fore Yellow -NoNewline }
-
-    $checkCmd = "test -f $($script:DCBin) && echo yes || echo no"
-    $dcOk = Invoke-Ssh $ip $port $user $checkCmd 10
-    if ($dcOk -ne "yes") {
-        Write-Host "installing DC..." -NoNewline -Fore Yellow
-        $installCmd = "mkdir -p $($script:DCDir); wget -q -O $($script:DCBin) $($script:GHRepo)/releases/latest/download/DaggerConnect 2>/dev/null; chmod +x $($script:DCBin); test -f $($script:DCBin) && echo DC_OK || echo DC_FAIL"
-        $out = Invoke-Ssh $ip $port $user $installCmd 120
-        if ($out -notmatch "DC_OK") { Write-Host "X DC failed!" -Fore Red; return $false }
-    }
+    $installCmd = "mkdir -p $($script:DCDir); wget -q -O $($script:DCBin) $($script:GHRepo)/releases/latest/download/DaggerConnect 2>/dev/null; chmod +x $($script:DCBin); test -f $($script:DCBin) && echo DC_OK || echo DC_FAIL"
+    $out = Invoke-Ssh $ip $port $user $installCmd 120
+    if ($out -notmatch "DC_OK") { Write-Host "X DC failed!" -Fore Red; return $false }
     Write-Host "OK" -Fore Green
     return $true
 }
