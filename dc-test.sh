@@ -62,58 +62,57 @@ declare -a KHAREJ_USERS=()
 declare -a KHAREJ_AUTHS=()
 
 # ═══════════════════════════════════════════════════
-#  CURATED TEST SCENARIOS
+#  ۲۵ CURATED COMBINATORIAL SCENARIOS
 # ═══════════════════════════════════════════════════
 #
-# Each scenario: "group|label|transport|profile|obfus|pool|smux|chunked|kcp_preset"
+# Format: "group|label|transport|profile|obfus|pool|smux|chunked|kcp"
 #
-# Groups:
-#   1-transport   6 tests — all transports, default settings
-#   2-profile     2 tests — balanced vs aggressive on httpsmux
-#   3-obfus       3 tests — disabled/balanced/maximum on httpsmux
-#   4-mimicry     4 tests — httpmux+httpsmux × chunked on/off
-#   5-smux        2 tests — balanced vs efficient on httpsmux
-#   6-kcp         2 tests — default vs aggressive KCP on kcpmux
+# Logic:
+#   - هر ترانسپورت × ۳ سطح obfuscation (off/balanced/max)
+#   - httpsmux اضافه: aggressive profile × ۳ obfus
+#   - httpmux + httpsmux: chunked=on تست
+#   - kcpmux: KCP aggressive تست
+#   - httpsmux: smux=cpu-efficient تست
 #
-# Total: ~19 unique tests per server pair
+# Total: 25 tests per server pair
 
 declare -a SCENARIOS=(
-    # ── Group 1: Transport Shootout ──
-    # All 6 transports, balanced profile, obfus=balanced, pool=3, smux=balanced
-    "1-transport|tcpmux|tcpmux|balanced|balanced|3|balanced|off|default"
-    "1-transport|kcpmux|kcpmux|balanced|balanced|3|balanced|off|default"
-    "1-transport|wsmux|wsmux|balanced|balanced|3|balanced|off|default"
-    "1-transport|wssmux|wssmux|balanced|balanced|3|balanced|off|default"
-    "1-transport|httpmux|httpmux|balanced|balanced|3|balanced|off|default"
-    "1-transport|httpsmux|httpsmux|balanced|balanced|3|balanced|off|default"
+    # ━━━ tcpmux (3 tests) ━━━
+    "tcpmux|tcp+obfus=off|tcpmux|balanced|disabled|3|balanced|off|default"
+    "tcpmux|tcp+obfus=bal|tcpmux|balanced|balanced|3|balanced|off|default"
+    "tcpmux|tcp+obfus=max|tcpmux|balanced|maximum|3|balanced|off|default"
 
-    # ── Group 2: Profile Comparison ──
-    # httpsmux with balanced vs aggressive
-    "2-profile|balanced|httpsmux|balanced|balanced|3|balanced|off|default"
-    "2-profile|aggressive|httpsmux|aggressive|balanced|3|balanced|off|default"
+    # ━━━ kcpmux (4 tests) ━━━
+    "kcpmux|kcp+obfus=off|kcpmux|balanced|disabled|3|balanced|off|default"
+    "kcpmux|kcp+obfus=bal|kcpmux|balanced|balanced|3|balanced|off|default"
+    "kcpmux|kcp+obfus=max|kcpmux|balanced|maximum|3|balanced|off|default"
+    "kcpmux|kcp+aggressive|kcpmux|balanced|balanced|3|balanced|off|aggressive"
 
-    # ── Group 3: Obfuscation Levels ──
-    # httpsmux with disabled / balanced / maximum
-    "3-obfus|disabled|httpsmux|balanced|disabled|3|balanced|off|default"
-    "3-obfus|balanced|httpsmux|balanced|balanced|3|balanced|off|default"
-    "3-obfus|maximum|httpsmux|balanced|maximum|3|balanced|off|default"
+    # ━━━ wsmux (3 tests) ━━━
+    "wsmux|ws+obfus=off|wsmux|balanced|disabled|3|balanced|off|default"
+    "wsmux|ws+obfus=bal|wsmux|balanced|balanced|3|balanced|off|default"
+    "wsmux|ws+obfus=max|wsmux|balanced|maximum|3|balanced|off|default"
 
-    # ── Group 4: HTTP Mimicry Chunked ──
-    # httpmux and httpsmux with chunked on/off
-    "4-mimicry|httpmux+chunked=off|httpmux|balanced|balanced|3|balanced|off|default"
-    "4-mimicry|httpmux+chunked=on|httpmux|balanced|balanced|3|balanced|on|default"
-    "4-mimicry|httpsmux+chunked=off|httpsmux|balanced|balanced|3|balanced|off|default"
-    "4-mimicry|httpsmux+chunked=on|httpsmux|balanced|balanced|3|balanced|on|default"
+    # ━━━ wssmux (3 tests) ━━━
+    "wssmux|wss+obfus=off|wssmux|balanced|disabled|3|balanced|off|default"
+    "wssmux|wss+obfus=bal|wssmux|balanced|balanced|3|balanced|off|default"
+    "wssmux|wss+obfus=max|wssmux|balanced|maximum|3|balanced|off|default"
 
-    # ── Group 5: SMUX Preset ──
-    # httpsmux with balanced vs cpu-efficient smux
-    "5-smux|balanced|httpsmux|balanced|balanced|3|balanced|off|default"
-    "5-smux|cpu-efficient|httpsmux|balanced|balanced|3|cpu-efficient|off|default"
+    # ━━━ httpmux (4 tests) ━━━
+    "httpmux|http+obfus=off|httpmux|balanced|disabled|3|balanced|off|default"
+    "httpmux|http+obfus=bal|httpmux|balanced|balanced|3|balanced|off|default"
+    "httpmux|http+obfus=max|httpmux|balanced|maximum|3|balanced|off|default"
+    "httpmux|http+chunked|httpmux|balanced|balanced|3|balanced|on|default"
 
-    # ── Group 6: KCP Tuning ──
-    # kcpmux with default vs aggressive KCP settings
-    "6-kcp|default|kcpmux|balanced|balanced|3|balanced|off|default"
-    "6-kcp|aggressive|kcpmux|aggressive|balanced|3|balanced|off|aggressive"
+    # ━━━ httpsmux ⭐ (8 tests) ━━━
+    "httpsmux|https+obfus=off|httpsmux|balanced|disabled|3|balanced|off|default"
+    "httpsmux|https+obfus=bal|httpsmux|balanced|balanced|3|balanced|off|default"
+    "httpsmux|https+obfus=max|httpsmux|balanced|maximum|3|balanced|off|default"
+    "httpsmux|https+aggr+off|httpsmux|aggressive|disabled|3|balanced|off|default"
+    "httpsmux|https+aggr+bal|httpsmux|aggressive|balanced|3|balanced|off|default"
+    "httpsmux|https+aggr+max|httpsmux|aggressive|maximum|3|balanced|off|default"
+    "httpsmux|https+chunked|httpsmux|balanced|balanced|3|balanced|on|default"
+    "httpsmux|https+smux=eff|httpsmux|balanced|balanced|3|cpu-efficient|off|default"
 )
 
 # ══════════════════════════════════════════════════════════════
@@ -125,12 +124,11 @@ show_help() {
     echo -e "${CYAN}║          DaggerConnect — Batch Testing Tool                 ║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "${WHITE}Usage:${NC}"
-    echo "  ./dc-test.sh [options]"
+    echo -e "${WHITE}Usage:${NC}  ./dc-test.sh [options]"
     echo ""
     echo -e "${WHITE}Options:${NC}"
-    echo -e "  ${GREEN}-g, --group <name>${NC}    فقط یه گروه خاص تست شه"
-    echo -e "                       1-transport | 2-profile | 3-obfus | 4-mimicry | 5-smux | 6-kcp"
+    echo -e "  ${GREEN}-g, --group <name>${NC}    فقط یه ترانسپورت خاص تست شه"
+    echo -e "                       tcpmux | kcpmux | wsmux | wssmux | httpmux | httpsmux"
     echo -e "  ${GREEN}-i, --iran <name>${NC}     فقط سرور ایران خاص"
     echo -e "  ${GREEN}-k, --kharej <name>${NC}   فقط سرور خارج خاص"
     echo -e "  ${GREEN}-c, --config <file>${NC}   مسیر فایل کانفیگ (پیشفرض: servers.conf)"
@@ -139,20 +137,20 @@ show_help() {
     echo -e "  ${GREEN}-v, --verbose${NC}         جزئیات بیشتر"
     echo -e "  ${GREEN}-h, --help${NC}            نمایش این راهنما"
     echo ""
-    echo -e "${WHITE}Test Groups (${YELLOW}~19 tests${WHITE} total):${NC}"
-    echo -e "  ${YELLOW}1-transport${NC}   ۶ ترانسپورت: tcpmux, kcpmux, wsmux, wssmux, httpmux, httpsmux"
-    echo -e "  ${YELLOW}2-profile${NC}     ۲ پروفایل: balanced, aggressive"
-    echo -e "  ${YELLOW}3-obfus${NC}       ۳ سطح: disabled, balanced, maximum"
-    echo -e "  ${YELLOW}4-mimicry${NC}     ۴ حالت: httpmux/httpsmux × chunked on/off"
-    echo -e "  ${YELLOW}5-smux${NC}        ۲ پریست: balanced, cpu-efficient"
-    echo -e "  ${YELLOW}6-kcp${NC}         ۲ حالت: default, aggressive KCP"
+    echo -e "${WHITE}۲۵ Curated Tests:${NC}"
+    echo -e "  ${YELLOW}tcpmux${NC}    (3)  × obfus: off/balanced/maximum"
+    echo -e "  ${YELLOW}kcpmux${NC}    (4)  × obfus + KCP aggressive"
+    echo -e "  ${YELLOW}wsmux${NC}     (3)  × obfus: off/balanced/maximum"
+    echo -e "  ${YELLOW}wssmux${NC}    (3)  × obfus: off/balanced/maximum"
+    echo -e "  ${YELLOW}httpmux${NC}   (4)  × obfus + chunked=on"
+    echo -e "  ${YELLOW}httpsmux${NC}  (8)  × obfus × profile(bal+aggr) + chunked + smux=eff"
     echo ""
     echo -e "${WHITE}Examples:${NC}"
-    echo "  ./dc-test.sh                              # همه ۱۹ تست"
-    echo "  ./dc-test.sh -g 1-transport               # فقط ۶ ترانسپورت"
-    echo "  ./dc-test.sh -g 4-mimicry -i ir1 -k kh1   # mimicry بین ir1 و kh1"
-    echo "  ./dc-test.sh --quick                       # بدون iperf"
-    echo "  ./dc-test.sh --dry-run                     # فقط config ببین"
+    echo "  ./dc-test.sh                        # همه ۲۵ تست"
+    echo "  ./dc-test.sh -g httpsmux             # فقط ۸ تست httpsmux"
+    echo "  ./dc-test.sh -g kcpmux --quick       # فقط kcpmux بدون iperf"
+    echo "  ./dc-test.sh -i ir1 -k kh1           # بین ir1 و kh1"
+    echo "  ./dc-test.sh --dry-run -v             # فقط config ببین"
     echo ""
 }
 
@@ -186,9 +184,9 @@ parse_args() {
     done
 
     if [[ -n "$FILTER_GROUP" ]]; then
-        if [[ ! "$FILTER_GROUP" =~ ^(1-transport|2-profile|3-obfus|4-mimicry|5-smux|6-kcp)$ ]]; then
+        if [[ ! "$FILTER_GROUP" =~ ^(tcpmux|kcpmux|wsmux|wssmux|httpmux|httpsmux)$ ]]; then
             echo -e "${RED}❌ گروه نامعتبر: $FILTER_GROUP${NC}"
-            echo "  مقادیر مجاز: 1-transport, 2-profile, 3-obfus, 4-mimicry, 5-smux, 6-kcp"
+            echo "  مقادیر مجاز: tcpmux, kcpmux, wsmux, wssmux, httpmux, httpsmux"
             exit 1
         fi
     fi
