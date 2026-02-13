@@ -33,6 +33,7 @@ $script:GHApi = "https://api.github.com/repos/itsFLoKi/DaggerConnect/releases/la
 $script:Results = [System.Collections.ArrayList]::new()
 $script:KeyFile = "$env:USERPROFILE\.ssh\id_rsa"
 $TS = Get-Date -Format "yyyyMMdd_HHmmss"
+$script:CsvFile = "results_${TS}.csv"
 
 # SOCKS proxy for Kharej connections (via connect.exe)
 $script:KharejIPs = @()
@@ -57,21 +58,17 @@ function Show-Banner {
     Write-Host ""
 }
 
-# ═══ 25 SCENARIOS (strongest first) ═══
+# ═══ 25 SCENARIOS (most reliable first) ═══
 $Scenarios = @(
-    # ⭐ httpsmux — HTTPS+TLS (strongest)
-    [pscustomobject]@{G="httpsmux";L="https+obfus=off"; T="httpsmux";Prof="balanced";   Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="httpsmux";L="https+obfus=bal"; T="httpsmux";Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="httpsmux";L="https+obfus=max"; T="httpsmux";Prof="balanced";   Obf="maximum";  Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="httpsmux";L="https+aggr+off";  T="httpsmux";Prof="aggressive"; Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="httpsmux";L="https+aggr+bal";  T="httpsmux";Prof="aggressive"; Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="httpsmux";L="https+aggr+max";  T="httpsmux";Prof="aggressive"; Obf="maximum";  Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="httpsmux";L="https+chunked";   T="httpsmux";Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="on";  Kcp="default"}
-    [pscustomobject]@{G="httpsmux";L="https+smux=eff";  T="httpsmux";Prof="balanced";   Obf="balanced"; Pool=3; Smux="cpu-efficient"; Ch="off"; Kcp="default"}
-    # wssmux — WSS+TLS
-    [pscustomobject]@{G="wssmux";  L="wss+obfus=off";  T="wssmux";  Prof="balanced";   Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="wssmux";  L="wss+obfus=bal";  T="wssmux";  Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="wssmux";  L="wss+obfus=max";  T="wssmux";  Prof="balanced";   Obf="maximum";  Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
+    # tcpmux — plain TCP (most reliable)
+    [pscustomobject]@{G="tcpmux";  L="tcp+obfus=off";  T="tcpmux";  Prof="balanced";   Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
+    [pscustomobject]@{G="tcpmux";  L="tcp+obfus=bal";  T="tcpmux";  Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
+    [pscustomobject]@{G="tcpmux";  L="tcp+obfus=max";  T="tcpmux";  Prof="balanced";   Obf="maximum";  Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
+    # kcpmux — KCP/UDP
+    [pscustomobject]@{G="kcpmux";  L="kcp+obfus=off";  T="kcpmux";  Prof="balanced";   Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
+    [pscustomobject]@{G="kcpmux";  L="kcp+obfus=bal";  T="kcpmux";  Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
+    [pscustomobject]@{G="kcpmux";  L="kcp+obfus=max";  T="kcpmux";  Prof="balanced";   Obf="maximum";  Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
+    [pscustomobject]@{G="kcpmux";  L="kcp+aggressive"; T="kcpmux";  Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="aggressive"}
     # httpmux — HTTP mimicry
     [pscustomobject]@{G="httpmux"; L="http+obfus=off";  T="httpmux"; Prof="balanced";   Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
     [pscustomobject]@{G="httpmux"; L="http+obfus=bal";  T="httpmux"; Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
@@ -81,15 +78,19 @@ $Scenarios = @(
     [pscustomobject]@{G="wsmux";   L="ws+obfus=off";   T="wsmux";   Prof="balanced";   Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
     [pscustomobject]@{G="wsmux";   L="ws+obfus=bal";   T="wsmux";   Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
     [pscustomobject]@{G="wsmux";   L="ws+obfus=max";   T="wsmux";   Prof="balanced";   Obf="maximum";  Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    # kcpmux — KCP/UDP
-    [pscustomobject]@{G="kcpmux";  L="kcp+obfus=off";  T="kcpmux";  Prof="balanced";   Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="kcpmux";  L="kcp+obfus=bal";  T="kcpmux";  Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="kcpmux";  L="kcp+obfus=max";  T="kcpmux";  Prof="balanced";   Obf="maximum";  Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="kcpmux";  L="kcp+aggressive"; T="kcpmux";  Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="aggressive"}
-    # tcpmux — plain TCP (weakest)
-    [pscustomobject]@{G="tcpmux";  L="tcp+obfus=off";  T="tcpmux";  Prof="balanced";   Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="tcpmux";  L="tcp+obfus=bal";  T="tcpmux";  Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="tcpmux";  L="tcp+obfus=max";  T="tcpmux";  Prof="balanced";   Obf="maximum";  Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
+    # wssmux — WSS+TLS
+    [pscustomobject]@{G="wssmux";  L="wss+obfus=off";  T="wssmux";  Prof="balanced";   Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
+    [pscustomobject]@{G="wssmux";  L="wss+obfus=bal";  T="wssmux";  Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
+    [pscustomobject]@{G="wssmux";  L="wss+obfus=max";  T="wssmux";  Prof="balanced";   Obf="maximum";  Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
+    # httpsmux — HTTPS+TLS (most likely filtered)
+    [pscustomobject]@{G="httpsmux";L="https+obfus=off"; T="httpsmux";Prof="balanced";   Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
+    [pscustomobject]@{G="httpsmux";L="https+obfus=bal"; T="httpsmux";Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
+    [pscustomobject]@{G="httpsmux";L="https+obfus=max"; T="httpsmux";Prof="balanced";   Obf="maximum";  Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
+    [pscustomobject]@{G="httpsmux";L="https+aggr+off";  T="httpsmux";Prof="aggressive"; Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
+    [pscustomobject]@{G="httpsmux";L="https+aggr+bal";  T="httpsmux";Prof="aggressive"; Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
+    [pscustomobject]@{G="httpsmux";L="https+aggr+max";  T="httpsmux";Prof="aggressive"; Obf="maximum";  Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
+    [pscustomobject]@{G="httpsmux";L="https+chunked";   T="httpsmux";Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="on";  Kcp="default"}
+    [pscustomobject]@{G="httpsmux";L="https+smux=eff";  T="httpsmux";Prof="balanced";   Obf="balanced"; Pool=3; Smux="cpu-efficient"; Ch="off"; Kcp="default"}
 )
 
 # ═══ PARSE CONFIG ═══
@@ -445,22 +446,34 @@ function Deploy-And-Start($ip, $port, $user, $role, $yaml, $transport) {
         $certCmd = "if [ ! -f $($script:DCDir)/certs/cert.pem ]; then mkdir -p $($script:DCDir)/certs; openssl req -x509 -newkey rsa:2048 -keyout $($script:DCDir)/certs/key.pem -out $($script:DCDir)/certs/cert.pem -days 365 -nodes -subj /CN=www.google.com 2>/dev/null; fi;"
     }
 
-    # One SSH: stop + write yaml + certs + write service + start
-    $cmd = "systemctl stop DaggerConnect-${role} 2>/dev/null; mkdir -p $($script:DCDir); echo '$b64' | base64 -d > $($script:DCDir)/${role}.yaml; ${certCmd} echo '$b64s' | base64 -d > $($script:DCSys)/DaggerConnect-${role}.service; systemctl daemon-reload; systemctl start DaggerConnect-${role}; echo DEPLOYED"
+    # One SSH: force-stop + kill + write yaml + certs + write service + start
+    $cmd = "systemctl stop DaggerConnect-${role} 2>/dev/null; pkill -9 -f 'DaggerConnect.*${role}' 2>/dev/null; sleep 0.5; mkdir -p $($script:DCDir); echo '$b64' | base64 -d > $($script:DCDir)/${role}.yaml; ${certCmd} echo '$b64s' | base64 -d > $($script:DCSys)/DaggerConnect-${role}.service; systemctl daemon-reload; journalctl --rotate 2>/dev/null; journalctl --vacuum-time=1s 2>/dev/null; systemctl start DaggerConnect-${role}; echo DEPLOYED"
     Invoke-Ssh $ip $port $user $cmd 30 | Out-Null
 }
 
-# Wait for tunnel ON the server (1 SSH call with bash loop)
-function Wait-Tunnel-Remote($khIp, $khP, $khU) {
-    # Single SSH: bash loop checks journal every second for 8s
-    $cmd = "for i in `$(seq 1 8); do sleep 1; st=`$(systemctl is-active DaggerConnect-client 2>/dev/null); if [ `"`$st`" = 'failed' ] || [ `"`$st`" = 'dead' ]; then echo CRASHED; exit 0; fi; if journalctl -u DaggerConnect-client -n 30 --no-pager 2>/dev/null | grep -qiE 'session added|connected|established'; then echo TUNNEL_OK; exit 0; fi; done; echo TIMEOUT"
-    $result = Invoke-Ssh $khIp $khP $khU $cmd 20
+# Wait for tunnel by probing test port from Iran through tunnel
+function Wait-Tunnel-Remote($irIp, $irP, $irU, $khIp, $khP, $khU) {
+    $tport = $script:TestPort
+    # Start listener on Kharej test port (so probe has something to connect to)
+    Invoke-Ssh $khIp $khP $khU "nohup bash -c 'nc -l -p $tport -w 30 </dev/null &>/dev/null' &>/dev/null &" 5 | Out-Null
+    # Probe from Iran: try connecting to 127.0.0.1:$tport through tunnel
+    $cmd = "for i in `$(seq 1 12); do sleep 1; if nc -zw2 127.0.0.1 $tport 2>/dev/null; then echo TUNNEL_OK; exit 0; fi; done; echo TIMEOUT"
+    $result = Invoke-Ssh $irIp $irP $irU $cmd 25
+    # Kill listener
+    Invoke-Ssh $khIp $khP $khU "pkill -f 'nc -l -p $tport' 2>/dev/null; true" 5 | Out-Null
+    # Check if client crashed
+    if ($result -ne "TUNNEL_OK") {
+        $st = Invoke-Ssh $khIp $khP $khU 'systemctl is-active DaggerConnect-client 2>/dev/null' 5
+        if ($st -match 'failed|dead|inactive') { return "CRASHED" }
+    }
     return $result
 }
 
 function Stop-Both($irIp, $irP, $irU, $khIp, $khP, $khU) {
-    Invoke-Ssh $irIp $irP $irU 'systemctl stop DaggerConnect-server 2>/dev/null; true' 10 | Out-Null
-    Invoke-Ssh $khIp $khP $khU 'systemctl stop DaggerConnect-client 2>/dev/null; true' 10 | Out-Null
+    $tp = $script:TunnelPort
+    Invoke-Ssh $irIp $irP $irU "systemctl stop DaggerConnect-server 2>/dev/null; pkill -9 -f 'DaggerConnect.*server' 2>/dev/null; for i in 1 2 3 4 5; do ss -tlnp | grep -q ':${tp} ' || break; sleep 0.5; done; true" 10 | Out-Null
+    Invoke-Ssh $khIp $khP $khU 'systemctl stop DaggerConnect-client 2>/dev/null; pkill -9 -f "DaggerConnect.*client" 2>/dev/null; true' 10 | Out-Null
+    Start-Sleep 1
 }
 
 function Get-Latency($irIp, $irP, $irU, $khIp) {
@@ -523,8 +536,8 @@ function Run-Test($sc, $irSrv, $irIp, $khSrv, $khIp) {
     # SSH call 2: Deploy + Start client on Kharej
     Deploy-And-Start $khIp $khSrv.Port $khSrv.User "client" (Build-ClientYaml $sc $irIp) $sc.T
 
-    # SSH call 3: Wait for tunnel (single bash loop on Kharej)
-    $result = Wait-Tunnel-Remote $khIp $khSrv.Port $khSrv.User
+    # Probe tunnel from Iran side (most reliable detection)
+    $result = Wait-Tunnel-Remote $irIp $irSrv.Port $irSrv.User $khIp $khSrv.Port $khSrv.User
 
     if ($result -eq "TUNNEL_OK") {
         $status = "OK"
@@ -532,8 +545,8 @@ function Run-Test($sc, $irSrv, $irIp, $khSrv, $khIp) {
         $bw = Get-Bandwidth $irIp $irSrv.Port $irSrv.User $khIp $khSrv.Port $khSrv.User
         Write-Host "OK $lat $bw" -Fore Green
     } else {
-        # Get detailed error from both server and client logs
-        $errCmd = 'journalctl -u DaggerConnect-{0} -n 10 --no-pager 2>/dev/null | grep -iE "error|fail|license|refused|timeout|❌" | tail -1 | sed "s/.*DaggerConnect\[[0-9]*\]: //" | cut -c1-80'
+        # Get detailed error from current test only (last 30s)
+        $errCmd = 'journalctl -u DaggerConnect-{0} --since "30 seconds ago" --no-pager 2>/dev/null | grep -iE "error|fail|license|refused|timeout|❌" | tail -1 | sed "s/.*DaggerConnect\[[0-9]*\]: //" | cut -c1-80'
         $srvErr = Invoke-Ssh $irIp $irSrv.Port $irSrv.User ($errCmd -f 'server') 8
         $cliErr = Invoke-Ssh $khIp $khSrv.Port $khSrv.User ($errCmd -f 'client') 8
         $errMsg = ""
@@ -545,7 +558,10 @@ function Run-Test($sc, $irSrv, $irIp, $khSrv, $khIp) {
     }
 
     Stop-Both $irIp $irSrv.Port $irSrv.User $khIp $khSrv.Port $khSrv.User
-    [void]$script:Results.Add([pscustomobject]@{Iran=$irSrv.Name;Kharej=$khSrv.Name;Group=$sc.G;Test=$sc.L;IranIP=$irIp;KharejIP=$khIp;Status=$status;Latency=$lat;BW=$bw})
+    $row = [pscustomobject]@{Iran=$irSrv.Name;Kharej=$khSrv.Name;Group=$sc.G;Test=$sc.L;IranIP=$irIp;KharejIP=$khIp;Status=$status;Latency=$lat;BW=$bw}
+    [void]$script:Results.Add($row)
+    # Append to CSV immediately
+    "$($row.Iran),$($row.Kharej),$($row.Group),$($row.Test),$($row.IranIP),$($row.KharejIP),$($row.Status),$($row.Latency),$($row.BW)" | Out-File $script:CsvFile -Append -Encoding UTF8
 }
 
 # ═══ RESULTS ═══
@@ -558,15 +574,9 @@ function Show-Results {
         $c = if ($r.Status -eq "OK") { "Green" } elseif ($r.Status -eq "DRY") { "Cyan" } else { "Red" }
         Write-Host ("  {0,-5} > {1,-5} | {2,-20} | {3,-6} | {4,-8} | {5}" -f $r.Iran, $r.Kharej, $r.Test, $r.Status, $r.Latency, $r.BW) -Fore $c
     }
-    $csv = "results_$TS.csv"
-    "Iran,Kharej,Group,Test,IranIP,KharejIP,Status,Latency,Bandwidth" | Out-File $csv -Encoding UTF8
-    foreach ($r in $script:Results) {
-        "$($r.Iran),$($r.Kharej),$($r.Group),$($r.Test),$($r.IranIP),$($r.KharejIP),$($r.Status),$($r.Latency),$($r.BW)" | Out-File $csv -Append -Encoding UTF8
-    }
-    Write-Host "`n  Saved: $csv" -Fore Green
     $total = $script:Results.Count
     $pass = @($script:Results | Where-Object { $_.Status -eq "OK" }).Count
-    Write-Host "  Total=$total  Pass=$pass  Fail=$($total-$pass)" -Fore White
+    Write-Host "`n  Total=$total  Pass=$pass  Fail=$($total-$pass)" -Fore White
 }
 
 # ═══ MAIN ═══
@@ -684,19 +694,27 @@ if (-not $DryRun) {
     Write-Host ""
 }
 
+# Init CSV with header
+"Iran,Kharej,Group,Test,IranIP,KharejIP,Status,Latency,Bandwidth" | Out-File $script:CsvFile -Encoding UTF8
+
 Write-Host "  ====== Testing ======" -Fore Cyan
-$lastG = ""
-foreach ($sc in $tests) {
-    if ($sc.G -ne $lastG) { $lastG = $sc.G; Write-Host "`n  ----- $lastG -----" -Fore Yellow }
-    foreach ($ir in $IranServers) {
-        foreach ($kh in $KharejServers) {
-            foreach ($irIp in $ir.IPs) {
-                foreach ($khIp in $kh.IPs) { Run-Test $sc $ir $irIp $kh $khIp }
+Write-Host "  (Ctrl+C to stop - results auto-saved to $($script:CsvFile))" -Fore DarkGray
+
+try {
+    $lastG = ""
+    foreach ($sc in $tests) {
+        if ($sc.G -ne $lastG) { $lastG = $sc.G; Write-Host "`n  ----- $lastG -----" -Fore Yellow }
+        foreach ($ir in $IranServers) {
+            foreach ($kh in $KharejServers) {
+                foreach ($irIp in $ir.IPs) {
+                    foreach ($khIp in $kh.IPs) { Run-Test $sc $ir $irIp $kh $khIp }
+                }
             }
         }
     }
+} finally {
+    Write-Host "`n  ====== Summary ======" -Fore Cyan
+    Show-Results
+    Close-AllSessions
+    Write-Host "  Results saved: $($script:CsvFile)" -Fore Green
 }
-
-Write-Host "`n  ====== Summary ======" -Fore Cyan
-Show-Results
-Close-AllSessions
