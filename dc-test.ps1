@@ -29,6 +29,7 @@ $script:DCBin = "/usr/local/bin/DaggerConnect"
 $script:DCDir = "/etc/DaggerConnect"
 $script:DCSys = "/etc/systemd/system"
 $script:GHRepo = "https://github.com/itsFLoKi/DaggerConnect"
+$script:DCVer = "v1.4"
 $script:GHApi = "https://api.github.com/repos/itsFLoKi/DaggerConnect/releases/latest"
 $script:Results = [System.Collections.ArrayList]::new()
 $script:KeyFile = "$env:USERPROFILE\.ssh\id_rsa"
@@ -58,39 +59,12 @@ function Show-Banner {
     Write-Host ""
 }
 
-# ═══ 25 SCENARIOS (most reliable first) ═══
+# ═══ SCENARIOS (one per protocol, strongest settings) ═══
 $Scenarios = @(
-    # tcpmux — plain TCP (most reliable)
-    [pscustomobject]@{G="tcpmux";  L="tcp+obfus=off";  T="tcpmux";  Prof="balanced";   Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="tcpmux";  L="tcp+obfus=bal";  T="tcpmux";  Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="tcpmux";  L="tcp+obfus=max";  T="tcpmux";  Prof="balanced";   Obf="maximum";  Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    # kcpmux — KCP/UDP
-    [pscustomobject]@{G="kcpmux";  L="kcp+obfus=off";  T="kcpmux";  Prof="balanced";   Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="kcpmux";  L="kcp+obfus=bal";  T="kcpmux";  Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="kcpmux";  L="kcp+obfus=max";  T="kcpmux";  Prof="balanced";   Obf="maximum";  Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="kcpmux";  L="kcp+aggressive"; T="kcpmux";  Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="aggressive"}
-    # httpmux — HTTP mimicry
-    [pscustomobject]@{G="httpmux"; L="http+obfus=off";  T="httpmux"; Prof="balanced";   Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="httpmux"; L="http+obfus=bal";  T="httpmux"; Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="httpmux"; L="http+obfus=max";  T="httpmux"; Prof="balanced";   Obf="maximum";  Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="httpmux"; L="http+chunked";    T="httpmux"; Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="on";  Kcp="default"}
-    # wsmux — WebSocket
-    [pscustomobject]@{G="wsmux";   L="ws+obfus=off";   T="wsmux";   Prof="balanced";   Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="wsmux";   L="ws+obfus=bal";   T="wsmux";   Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="wsmux";   L="ws+obfus=max";   T="wsmux";   Prof="balanced";   Obf="maximum";  Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    # wssmux — WSS+TLS
-    [pscustomobject]@{G="wssmux";  L="wss+obfus=off";  T="wssmux";  Prof="balanced";   Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="wssmux";  L="wss+obfus=bal";  T="wssmux";  Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="wssmux";  L="wss+obfus=max";  T="wssmux";  Prof="balanced";   Obf="maximum";  Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    # httpsmux — HTTPS+TLS (most likely filtered)
-    [pscustomobject]@{G="httpsmux";L="https+obfus=off"; T="httpsmux";Prof="balanced";   Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="httpsmux";L="https+obfus=bal"; T="httpsmux";Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="httpsmux";L="https+obfus=max"; T="httpsmux";Prof="balanced";   Obf="maximum";  Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="httpsmux";L="https+aggr+off";  T="httpsmux";Prof="aggressive"; Obf="disabled"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="httpsmux";L="https+aggr+bal";  T="httpsmux";Prof="aggressive"; Obf="balanced"; Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="httpsmux";L="https+aggr+max";  T="httpsmux";Prof="aggressive"; Obf="maximum";  Pool=3; Smux="balanced";      Ch="off"; Kcp="default"}
-    [pscustomobject]@{G="httpsmux";L="https+chunked";   T="httpsmux";Prof="balanced";   Obf="balanced"; Pool=3; Smux="balanced";      Ch="on";  Kcp="default"}
-    [pscustomobject]@{G="httpsmux";L="https+smux=eff";  T="httpsmux";Prof="balanced";   Obf="balanced"; Pool=3; Smux="cpu-efficient"; Ch="off"; Kcp="default"}
+    [pscustomobject]@{G="tcpmux";  L="tcpmux";   T="tcpmux";  Prof="aggressive"; Obf="disabled"; Pool=3; Smux="balanced"; Ch="on"; Kcp="default"}
+    [pscustomobject]@{G="kcpmux";  L="kcpmux";   T="kcpmux";  Prof="aggressive"; Obf="disabled"; Pool=3; Smux="balanced"; Ch="on"; Kcp="aggressive"}
+    [pscustomobject]@{G="httpmux"; L="httpmux";  T="httpmux"; Prof="aggressive"; Obf="disabled"; Pool=3; Smux="balanced"; Ch="on"; Kcp="default"}
+    [pscustomobject]@{G="httpsmux";L="httpsmux"; T="httpsmux";Prof="aggressive"; Obf="disabled"; Pool=3; Smux="balanced"; Ch="on"; Kcp="default"}
 )
 
 # ═══ PARSE CONFIG ═══
@@ -114,7 +88,8 @@ function Parse-Config {
                     $port = [int]($parts[1].Trim())
                     $user = $parts[2].Trim()
                     $auth = $parts[3].Trim()
-                    $srv = [pscustomobject]@{ Name=$name; IPs=$ips; Port=$port; User=$user; Auth=$auth }
+                    $srvPsk = if ($parts.Count -ge 5) { $parts[4].Trim() } else { "" }
+                    $srv = [pscustomobject]@{ Name=$name; IPs=$ips; Port=$port; User=$user; Auth=$auth; Psk=$srvPsk }
                     if ($section -eq "iran") { [void]$IranServers.Add($srv) } else { [void]$KharejServers.Add($srv) }
                 }
             }
@@ -373,17 +348,25 @@ function Install-On($label, $ip, $port, $user) {
     $test = Invoke-Ssh $ip $port $user 'echo OK' 10
     if ($test -ne "OK") { Write-Host "X SSH failed!" -Fore Red; return $false }
 
-    # Quick check: if DC already exists, skip everything
-    $dcOk = Invoke-Ssh $ip $port $user "test -f $($script:DCBin) && echo yes || echo no" 10
+    # Quick check: if DC v1.4 already exists, skip
+    $dcOk = Invoke-Ssh $ip $port $user "test -f $($script:DCBin) && test -f $($script:DCDir)/.ver_$($script:DCVer) && echo yes || echo no" 10
     if ($dcOk -eq "yes") { Write-Host "OK (cached)" -Fore Green; return $true }
 
-    # DC not found — install packages + DC
-    Write-Host "installing..." -NoNewline -Fore Yellow
-    $out = Invoke-Ssh $ip $port $user 'export DEBIAN_FRONTEND=noninteractive; apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq curl wget jq openssl iperf3 >/dev/null 2>&1; echo PKG_OK' 120
-    if ($out -notmatch "PKG_OK") { Write-Host "[pkg warn] " -Fore Yellow -NoNewline }
-    $installCmd = "mkdir -p $($script:DCDir); wget -q -O $($script:DCBin) $($script:GHRepo)/releases/latest/download/DaggerConnect 2>/dev/null; chmod +x $($script:DCBin); test -f $($script:DCBin) && echo DC_OK || echo DC_FAIL"
-    $out = Invoke-Ssh $ip $port $user $installCmd 120
+    Write-Host "installing $($script:DCVer)..." -NoNewline -Fore Yellow
+
+    # Step 1: Download binary first (fast, most important)
+    $dlUrl = "$($script:GHRepo)/releases/download/$($script:DCVer)/DaggerConnect"
+    $installCmd = "mkdir -p $($script:DCDir); wget -q -O $($script:DCBin) $dlUrl 2>/dev/null; chmod +x $($script:DCBin); test -x $($script:DCBin) && touch $($script:DCDir)/.ver_$($script:DCVer) && echo DC_OK || echo DC_FAIL"
+    $out = Invoke-Ssh $ip $port $user $installCmd 60
     if ($out -notmatch "DC_OK") { Write-Host "X DC failed!" -Fore Red; return $false }
+
+    # Step 2: Install packages only if nc/openssl missing
+    $need = Invoke-Ssh $ip $port $user 'which nc >/dev/null 2>&1 && which openssl >/dev/null 2>&1 && echo HAS || echo NEED' 5
+    if ($need -ne "HAS") {
+        $out = Invoke-Ssh $ip $port $user 'export DEBIAN_FRONTEND=noninteractive; fuser -k /var/lib/dpkg/lock-frontend 2>/dev/null; apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq netcat-openbsd openssl libpcap-dev >/dev/null 2>&1; echo PKG_OK' 60
+        if ($out -notmatch "PKG_OK") { Write-Host "[pkg warn] " -Fore Yellow -NoNewline }
+    }
+
     Write-Host "OK" -Fore Green
     return $true
 }
@@ -409,28 +392,41 @@ function Get-KcpBlock($preset) {
     }
 }
 function Get-MimicryBlock($ch) {
-    return "http_mimic:`n  fake_domain: ""www.google.com""`n  fake_path: ""/search""`n  user_agent: ""Mozilla/5.0""`n  chunked_encoding: $ch`n  session_cookie: true`n  custom_headers:`n    - ""Accept-Language: en-US,en;q=0.9""`n    - ""Accept-Encoding: gzip, deflate, br"""
+    return "http_mimic:`n  fake_domain: ""www.google.com""`n  fake_path: ""/search""`n  user_agent: ""Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36""`n  chunked_encoding: $ch`n  session_cookie: true`n  custom_headers:`n    - ""Accept-Language: en-US,en;q=0.9""`n    - ""Accept-Encoding: gzip, deflate, br"""
+}
+# DPI Bypass: Both (Light + Raw Socket) - strongest
+function Get-DpiBlock($role) {
+    $dpi = "light_dpi_bypass:`n  enabled: true`n  sni_split: true`n  ttl_manipulation: false`n  segment_size: 1200`n  pacing_delay_ms: 2`n  jitter_range_ms: 1"
+    # Raw socket needs interface/IP/MAC - auto-detect on server
+    if ($role -eq "server") {
+        $dpi += "`n`nraw_socket:`n  enabled: true`n  interface: ""auto""`n  local_ip: ""auto""`n  local_port: $($script:TunnelPort)`n  gateway_mac: ""auto""`n  desync_method: ""split""`n  batch_size: 32`n  buffer_size: 2097152`n  coalesce_ms: 1`n  max_packet_size: 1400`n  randomize_ttl: true`n  min_ttl: 64`n  max_ttl: 128`n  fragment_first_packet: true`n  fragment_size: 40"
+    }
+    return $dpi
 }
 $Adv = "advanced:`n  tcp_nodelay: true`n  tcp_keepalive: 3`n  tcp_read_buffer: 32768`n  tcp_write_buffer: 32768`n  cleanup_interval: 1`n  session_timeout: 15`n  connection_timeout: 20`n  stream_timeout: 45`n  max_connections: 300`n  max_udp_flows: 150`n  udp_flow_timeout: 90`n  udp_buffer_size: 262144"
 
-function Build-ServerYaml($sc) {
-    $tp = $script:TunnelPort; $psk = $script:PSK; $dcd = $script:DCDir; $tport = $script:TestPort
+function Build-ServerYaml($sc, $psk) {
+    $tp = $script:TunnelPort; $dcd = $script:DCDir; $tport = $script:TestPort
+    if (-not $psk) { $psk = $script:PSK }
     $y = "mode: ""server""`nlisten: ""0.0.0.0:${tp}""`ntransport: ""$($sc.T)""`npsk: ""${psk}""`nprofile: ""$($sc.Prof)""`nverbose: true`nheartbeat: 2"
     if ($sc.T -in "wssmux","httpsmux") { $y += "`ncert_file: ""${dcd}/certs/cert.pem""`nkey_file: ""${dcd}/certs/key.pem""" }
     $y += "`n`nmaps:`n  - type: tcp`n    bind: ""0.0.0.0:${tport}""`n    target: ""127.0.0.1:${tport}"""
     $y += "`n`n" + (Get-ObfusBlock $sc.Obf) + "`n`n" + (Get-SmuxBlock $sc.Smux)
     if ($sc.T -eq "kcpmux") { $y += "`n`n" + (Get-KcpBlock $sc.Kcp) }
     if ($sc.T -in "httpmux","httpsmux") { $y += "`n`n" + (Get-MimicryBlock $sc.Ch) }
+    $y += "`n`n" + (Get-DpiBlock "server")
     $y += "`n`n$Adv"
     return $y
 }
-function Build-ClientYaml($sc, $irIp) {
-    $psk = $script:PSK; $tp = $script:TunnelPort
+function Build-ClientYaml($sc, $irIp, $psk) {
+    if (-not $psk) { $psk = $script:PSK }
+    $tp = $script:TunnelPort
     $y = "mode: ""client""`npsk: ""${psk}""`nprofile: ""$($sc.Prof)""`nverbose: true`nheartbeat: 2"
     $y += "`n`npaths:`n  - transport: ""$($sc.T)""`n    addr: ""${irIp}:${tp}""`n    connection_pool: $($sc.Pool)`n    aggressive_pool: true`n    retry_interval: 1`n    dial_timeout: 5"
     $y += "`n`n" + (Get-ObfusBlock $sc.Obf) + "`n`n" + (Get-SmuxBlock $sc.Smux)
     if ($sc.T -eq "kcpmux") { $y += "`n`n" + (Get-KcpBlock $sc.Kcp) }
     if ($sc.T -in "httpmux","httpsmux") { $y += "`n`n" + (Get-MimicryBlock $sc.Ch) }
+    $y += "`n`n" + (Get-DpiBlock "client")
     $y += "`n`n$Adv"
     return $y
 }
@@ -446,34 +442,32 @@ function Deploy-And-Start($ip, $port, $user, $role, $yaml, $transport) {
         $certCmd = "if [ ! -f $($script:DCDir)/certs/cert.pem ]; then mkdir -p $($script:DCDir)/certs; openssl req -x509 -newkey rsa:2048 -keyout $($script:DCDir)/certs/key.pem -out $($script:DCDir)/certs/cert.pem -days 365 -nodes -subj /CN=www.google.com 2>/dev/null; fi;"
     }
 
-    # One SSH: force-stop + kill + write yaml + certs + write service + start
-    $cmd = "systemctl stop DaggerConnect-${role} 2>/dev/null; pkill -9 -f 'DaggerConnect.*${role}' 2>/dev/null; sleep 0.5; mkdir -p $($script:DCDir); echo '$b64' | base64 -d > $($script:DCDir)/${role}.yaml; ${certCmd} echo '$b64s' | base64 -d > $($script:DCSys)/DaggerConnect-${role}.service; systemctl daemon-reload; journalctl --rotate 2>/dev/null; journalctl --vacuum-time=1s 2>/dev/null; systemctl start DaggerConnect-${role}; echo DEPLOYED"
+    # One SSH: force-stop + kill + wait port free + write yaml + certs + write service + start
+    $cmd = "systemctl stop DaggerConnect-${role} 2>/dev/null; pkill -9 -f 'DaggerConnect.*${role}' 2>/dev/null; sleep 1; for i in 1 2 3 4 5; do ss -tlnp | grep -q ':${tp} ' || break; sleep 0.5; done; mkdir -p $($script:DCDir); echo '$b64' | base64 -d > $($script:DCDir)/${role}.yaml; ${certCmd} echo '$b64s' | base64 -d > $($script:DCSys)/DaggerConnect-${role}.service; systemctl daemon-reload; systemctl restart DaggerConnect-${role}; echo DEPLOYED"
     Invoke-Ssh $ip $port $user $cmd 30 | Out-Null
+    Start-Sleep 2
 }
 
-# Wait for tunnel by probing test port from Iran through tunnel
+# Wait for tunnel: check for ESTABLISHED connections on tunnel port (reliable)
 function Wait-Tunnel-Remote($irIp, $irP, $irU, $khIp, $khP, $khU) {
-    $tport = $script:TestPort
-    # Start listener on Kharej test port (so probe has something to connect to)
-    Invoke-Ssh $khIp $khP $khU "nohup bash -c 'nc -l -p $tport -w 30 </dev/null &>/dev/null' &>/dev/null &" 5 | Out-Null
-    # Probe from Iran: try connecting to 127.0.0.1:$tport through tunnel
-    $cmd = "for i in `$(seq 1 12); do sleep 1; if nc -zw2 127.0.0.1 $tport 2>/dev/null; then echo TUNNEL_OK; exit 0; fi; done; echo TIMEOUT"
+    $tp = $script:TunnelPort
+    # Check if DaggerConnect-server has ESTABLISHED connections on port 443
+    $cmd = "for i in `$(seq 1 15); do sleep 1; if ss -tnp 2>/dev/null | grep ':${tp} ' | grep -q ESTAB; then echo TUNNEL_OK; exit 0; fi; done; echo TIMEOUT"
     $result = Invoke-Ssh $irIp $irP $irU $cmd 25
-    # Kill listener
-    Invoke-Ssh $khIp $khP $khU "pkill -f 'nc -l -p $tport' 2>/dev/null; true" 5 | Out-Null
-    # Check if client crashed
     if ($result -ne "TUNNEL_OK") {
         $st = Invoke-Ssh $khIp $khP $khU 'systemctl is-active DaggerConnect-client 2>/dev/null' 5
-        if ($st -match 'failed|dead|inactive') { return "CRASHED" }
+        if ($st -match 'failed|dead') { return "CRASHED" }
     }
     return $result
 }
 
 function Stop-Both($irIp, $irP, $irU, $khIp, $khP, $khU) {
-    $tp = $script:TunnelPort
-    Invoke-Ssh $irIp $irP $irU "systemctl stop DaggerConnect-server 2>/dev/null; pkill -9 -f 'DaggerConnect.*server' 2>/dev/null; for i in 1 2 3 4 5; do ss -tlnp | grep -q ':${tp} ' || break; sleep 0.5; done; true" 10 | Out-Null
-    Invoke-Ssh $khIp $khP $khU 'systemctl stop DaggerConnect-client 2>/dev/null; pkill -9 -f "DaggerConnect.*client" 2>/dev/null; true' 10 | Out-Null
-    Start-Sleep 1
+    $tp = $script:TunnelPort; $tport = $script:TestPort
+    # Stop server on Iran - wait for port 443 to be freed
+    Invoke-Ssh $irIp $irP $irU "systemctl stop DaggerConnect-server 2>/dev/null; pkill -9 -f 'DaggerConnect' 2>/dev/null; sleep 1; for i in 1 2 3 4 5 6 7 8; do ss -tlnp | grep -q ':${tp} ' || break; sleep 0.5; done; pkill -f 'nc -l -p $tport' 2>/dev/null; true" 15 | Out-Null
+    # Stop client on Kharej
+    Invoke-Ssh $khIp $khP $khU "systemctl stop DaggerConnect-client 2>/dev/null; pkill -9 -f 'DaggerConnect' 2>/dev/null; pkill -f 'nc -l -p $tport' 2>/dev/null; true" 10 | Out-Null
+    Start-Sleep 2
 }
 
 function Get-Latency($irIp, $irP, $irU, $khIp) {
@@ -485,74 +479,73 @@ function Get-Latency($irIp, $irP, $irU, $khIp) {
 function Get-Bandwidth($irIp, $irP, $irU, $khIp, $khP, $khU) {
     if ($Quick) { return "-" }
     $tport = $script:TestPort
-    $sizeMB = 50
+    $sizeMB = 5
 
-    # Download test (Kharej → Iran): Kharej sends data, Iran receives through tunnel
-    Invoke-Ssh $khIp $khP $khU "nohup bash -c 'dd if=/dev/zero bs=1M count=$sizeMB 2>/dev/null | nc -l -p $tport -q 2 -w 30' &>/dev/null &" 5 | Out-Null
-    Start-Sleep 1
-    $dlOut = Invoke-Ssh $irIp $irP $irU "START=`$(date +%s%N); nc -w 30 127.0.0.1 $tport -q 2 > /dev/null; END=`$(date +%s%N); MS=`$(( (END-START)/1000000 )); echo `$MS" 60
+    # Clean any leftover nc
+    Invoke-Ssh $khIp $khP $khU "pkill -f 'nc -l -p $tport' 2>/dev/null; true" 5 | Out-Null
     Start-Sleep 1
 
-    # Upload test (Iran → Kharej): Iran sends data, Kharej receives through tunnel
-    Invoke-Ssh $khIp $khP $khU "nohup bash -c 'nc -l -p $tport -q 2 -w 30 > /dev/null' &>/dev/null &" 5 | Out-Null
-    Start-Sleep 1
-    $ulOut = Invoke-Ssh $irIp $irP $irU "START=`$(date +%s%N); dd if=/dev/zero bs=1M count=$sizeMB 2>/dev/null | nc -w 30 127.0.0.1 $tport -q 2; END=`$(date +%s%N); MS=`$(( (END-START)/1000000 )); echo `$MS" 60
+    # Download: Kharej sends data, Iran receives through tunnel
+    Invoke-Ssh $khIp $khP $khU "nohup bash -c 'dd if=/dev/zero bs=1M count=$sizeMB 2>/dev/null | timeout 15 nc -l -p $tport -q 1' &>/dev/null &" 5 | Out-Null
+    Start-Sleep 2
+    $dlOut = Invoke-Ssh $irIp $irP $irU "S=`$(date +%s%N); timeout 15 nc -w 10 127.0.0.1 $tport > /dev/null 2>/dev/null; E=`$(date +%s%N); echo `$(( (E-S)/1000000 ))" 20
 
-    # Kill leftover nc
+    # Upload: Iran sends data, Kharej receives through tunnel
+    Start-Sleep 1
+    Invoke-Ssh $khIp $khP $khU "pkill -f 'nc -l -p $tport' 2>/dev/null; nohup bash -c 'timeout 15 nc -l -p $tport -q 1 > /dev/null' &>/dev/null &" 5 | Out-Null
+    Start-Sleep 2
+    $ulOut = Invoke-Ssh $irIp $irP $irU "S=`$(date +%s%N); dd if=/dev/zero bs=1M count=$sizeMB 2>/dev/null | timeout 15 nc -w 10 127.0.0.1 $tport -q 1; E=`$(date +%s%N); echo `$(( (E-S)/1000000 ))" 20
+
     Invoke-Ssh $khIp $khP $khU "pkill -f 'nc -l -p $tport' 2>/dev/null; true" 5 | Out-Null
 
-    # Calculate Mbps locally (50MB = 400Mbit, divide by seconds)
-    $dl = "-"
-    $ul = "-"
-    if ($dlOut -match '^\d+$' -and [int]$dlOut.Trim() -gt 0) {
-        $ms = [int]$dlOut.Trim()
-        $dl = [math]::Round(($sizeMB * 8 * 1000) / $ms, 1)
+    $dl = "-"; $ul = "-"
+    if ($dlOut -match '^\d+$' -and [int]$dlOut.Trim() -gt 500) {
+        $dl = [math]::Round(($sizeMB * 8 * 1000) / [int]$dlOut.Trim(), 1)
     }
-    if ($ulOut -match '^\d+$' -and [int]$ulOut.Trim() -gt 0) {
-        $ms = [int]$ulOut.Trim()
-        $ul = [math]::Round(($sizeMB * 8 * 1000) / $ms, 1)
+    if ($ulOut -match '^\d+$' -and [int]$ulOut.Trim() -gt 500) {
+        $ul = [math]::Round(($sizeMB * 8 * 1000) / [int]$ulOut.Trim(), 1)
     }
-
     if ($dl -ne "-" -or $ul -ne "-") { return "DL:${dl} UL:${ul} Mbps" }
     return "-"
 }
 
-# ═══ RUN ONE TEST (minimized SSH calls) ═══
-# Iran: 1 SSH deploy + 1 latency (if OK) + 1 stop = 2-3 calls
-# Kharej: 1 SSH deploy + 1 wait-loop + 1 stop = 3 calls (via proxy)
+# ═══ RUN ONE TEST (staged output) ═══
 function Run-Test($sc, $irSrv, $irIp, $khSrv, $khIp) {
     $status = "FAIL"; $lat = "-"; $bw = "-"
 
     if ($DryRun) {
-        Write-Host "  [DRY] $($sc.L) -- $($sc.T) | prof=$($sc.Prof) | obf=$($sc.Obf) | ch=$($sc.Ch) | kcp=$($sc.Kcp) | smux=$($sc.Smux)" -Fore Cyan
-        [void]$script:Results.Add([pscustomobject]@{Iran=$irSrv.Name;Kharej=$khSrv.Name;Group=$sc.G;Test=$sc.L;IranIP=$irIp;KharejIP=$khIp;Status="DRY";Latency="-";BW="-"})
+        Write-Host "  [DRY] $($sc.L) -- $($sc.T) | prof=$($sc.Prof) | obf=$($sc.Obf)" -Fore Cyan
+        $row = [pscustomobject]@{Iran=$irSrv.Name;Kharej=$khSrv.Name;Group=$sc.G;Test=$sc.L;IranIP=$irIp;KharejIP=$khIp;Status="DRY";Latency="-";BW="-"}
+        [void]$script:Results.Add($row)
         return
     }
 
     Write-Host "  > $($sc.L) ($irIp -> $khIp) " -Fore DarkGray -NoNewline
 
-    # SSH call 1: Deploy + Start server on Iran
-    Deploy-And-Start $irIp $irSrv.Port $irSrv.User "server" (Build-ServerYaml $sc) $sc.T
-    # SSH call 2: Deploy + Start client on Kharej
-    Deploy-And-Start $khIp $khSrv.Port $khSrv.User "client" (Build-ClientYaml $sc $irIp) $sc.T
+    # Stage 1: Deploy (use Iran server's PSK)
+    $irPsk = $irSrv.Psk
+    Deploy-And-Start $irIp $irSrv.Port $irSrv.User "server" (Build-ServerYaml $sc $irPsk) $sc.T
+    Deploy-And-Start $khIp $khSrv.Port $khSrv.User "client" (Build-ClientYaml $sc $irIp $irPsk) $sc.T
 
-    # Probe tunnel from Iran side (most reliable detection)
+    # Stage 2: Check tunnel
     $result = Wait-Tunnel-Remote $irIp $irSrv.Port $irSrv.User $khIp $khSrv.Port $khSrv.User
 
     if ($result -eq "TUNNEL_OK") {
         $status = "OK"
+        Write-Host "OK " -Fore Green -NoNewline
+
+        # Stage 3: Latency
         $lat = Get-Latency $irIp $irSrv.Port $irSrv.User $khIp
+        Write-Host "$lat " -Fore White -NoNewline
+
+        # Stage 4: Bandwidth
         $bw = Get-Bandwidth $irIp $irSrv.Port $irSrv.User $khIp $khSrv.Port $khSrv.User
-        Write-Host "OK $lat $bw" -Fore Green
+        Write-Host "$bw" -Fore Cyan
     } else {
-        # Get detailed error from current test only (last 30s)
-        $errCmd = 'journalctl -u DaggerConnect-{0} --since "30 seconds ago" --no-pager 2>/dev/null | grep -iE "error|fail|license|refused|timeout|❌" | tail -1 | sed "s/.*DaggerConnect\[[0-9]*\]: //" | cut -c1-80'
-        $srvErr = Invoke-Ssh $irIp $irSrv.Port $irSrv.User ($errCmd -f 'server') 8
-        $cliErr = Invoke-Ssh $khIp $khSrv.Port $khSrv.User ($errCmd -f 'client') 8
-        $errMsg = ""
-        if ($srvErr) { $errMsg += "SRV:$srvErr " }
-        if ($cliErr) { $errMsg += "CLI:$cliErr" }
-        if (-not $errMsg) { $errMsg = $result }
+        # Get error from client log (most useful)
+        $errCmd = 'journalctl -u DaggerConnect-client --since "20 seconds ago" --no-pager 2>/dev/null | tail -3 | head -1 | sed "s/.*DaggerConnect\[[0-9]*\]: //" | cut -c1-80'
+        $cliErr = Invoke-Ssh $khIp $khSrv.Port $khSrv.User $errCmd 8
+        $errMsg = if ($cliErr) { $cliErr.Trim() } else { $result }
         $failType = if ($result -eq "CRASHED") { "CRASH" } else { "FAIL" }
         Write-Host "$failType $errMsg" -Fore Red
     }
@@ -560,7 +553,6 @@ function Run-Test($sc, $irSrv, $irIp, $khSrv, $khIp) {
     Stop-Both $irIp $irSrv.Port $irSrv.User $khIp $khSrv.Port $khSrv.User
     $row = [pscustomobject]@{Iran=$irSrv.Name;Kharej=$khSrv.Name;Group=$sc.G;Test=$sc.L;IranIP=$irIp;KharejIP=$khIp;Status=$status;Latency=$lat;BW=$bw}
     [void]$script:Results.Add($row)
-    # Append to CSV immediately
     "$($row.Iran),$($row.Kharej),$($row.Group),$($row.Test),$($row.IranIP),$($row.KharejIP),$($row.Status),$($row.Latency),$($row.BW)" | Out-File $script:CsvFile -Append -Encoding UTF8
 }
 
@@ -579,7 +571,15 @@ function Show-Results {
     Write-Host "`n  Total=$total  Pass=$pass  Fail=$($total-$pass)" -Fore White
 }
 
+# ═══ CLEANUP (remove DC from server after tests) ═══
+function Cleanup-Server($ip, $port, $user, $role) {
+    $cmd = "systemctl stop DaggerConnect-${role} 2>/dev/null; systemctl disable DaggerConnect-${role} 2>/dev/null; rm -f $($script:DCSys)/DaggerConnect-${role}.service; rm -rf $($script:DCDir); rm -f $($script:DCBin); systemctl daemon-reload 2>/dev/null; echo CLEANED"
+    Invoke-Ssh $ip $port $user $cmd 15 | Out-Null
+}
+
 # ═══ MAIN ═══
+# Kill orphaned SSH sessions from previous runs
+Get-Process ssh -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Show-Banner
 Parse-Config
 
@@ -694,8 +694,16 @@ if (-not $DryRun) {
     Write-Host ""
 }
 
-# Init CSV with header
-"Iran,Kharej,Group,Test,IranIP,KharejIP,Status,Latency,Bandwidth" | Out-File $script:CsvFile -Encoding UTF8
+# Init CSV with header (or read existing for dedup)
+$existingTests = @{}
+if (Test-Path $script:CsvFile) {
+    foreach ($line in Get-Content $script:CsvFile | Select-Object -Skip 1) {
+        $cols = $line -split ','
+        if ($cols.Count -ge 6) { $existingTests["$($cols[3])|$($cols[4])|$($cols[5])"] = $true }
+    }
+} else {
+    "Iran,Kharej,Group,Test,IranIP,KharejIP,Status,Latency,Bandwidth" | Out-File $script:CsvFile -Encoding UTF8
+}
 
 Write-Host "  ====== Testing ======" -Fore Cyan
 Write-Host "  (Ctrl+C to stop - results auto-saved to $($script:CsvFile))" -Fore DarkGray
@@ -707,12 +715,44 @@ try {
         foreach ($ir in $IranServers) {
             foreach ($kh in $KharejServers) {
                 foreach ($irIp in $ir.IPs) {
-                    foreach ($khIp in $kh.IPs) { Run-Test $sc $ir $irIp $kh $khIp }
+                    foreach ($khIp in $kh.IPs) {
+                        # Skip if already tested
+                        $testKey = "$($sc.L)|$irIp|$khIp"
+                        if ($existingTests.ContainsKey($testKey)) {
+                            Write-Host "  > $($sc.L) ($irIp -> $khIp) SKIP (already tested)" -Fore DarkGray
+                            continue
+                        }
+                        Run-Test $sc $ir $irIp $kh $khIp
+                    }
                 }
             }
         }
     }
 } finally {
+    # Cleanup all servers
+    Write-Host "`n  ====== Cleanup ======" -Fore Cyan
+    $cleaned = @{}
+    foreach ($ir in $IranServers) {
+        foreach ($ip in $ir.IPs) {
+            if (-not $cleaned.ContainsKey($ip)) {
+                Write-Host "  [$($ir.Name)] $ip cleaning..." -NoNewline
+                Cleanup-Server $ip $ir.Port $ir.User "server"
+                Write-Host " OK" -Fore Green
+                $cleaned[$ip] = $true
+            }
+        }
+    }
+    foreach ($kh in $KharejServers) {
+        foreach ($ip in $kh.IPs) {
+            if (-not $cleaned.ContainsKey($ip)) {
+                Write-Host "  [$($kh.Name)] $ip cleaning..." -NoNewline
+                Cleanup-Server $ip $kh.Port $kh.User "client"
+                Write-Host " OK" -Fore Green
+                $cleaned[$ip] = $true
+            }
+        }
+    }
+
     Write-Host "`n  ====== Summary ======" -Fore Cyan
     Show-Results
     Close-AllSessions
