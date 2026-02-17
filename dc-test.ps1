@@ -394,14 +394,9 @@ function Get-KcpBlock($preset) {
 function Get-MimicryBlock($ch) {
     return "http_mimic:`n  fake_domain: ""www.google.com""`n  fake_path: ""/search""`n  user_agent: ""Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36""`n  chunked_encoding: $ch`n  session_cookie: true`n  custom_headers:`n    - ""Accept-Language: en-US,en;q=0.9""`n    - ""Accept-Encoding: gzip, deflate, br"""
 }
-# DPI Bypass: Both (Light + Raw Socket) - strongest
+# DPI Bypass: Light only (raw_socket with 'auto' not supported)
 function Get-DpiBlock($role) {
-    $dpi = "light_dpi_bypass:`n  enabled: true`n  sni_split: true`n  ttl_manipulation: false`n  segment_size: 1200`n  pacing_delay_ms: 2`n  jitter_range_ms: 1"
-    # Raw socket needs interface/IP/MAC - auto-detect on server
-    if ($role -eq "server") {
-        $dpi += "`n`nraw_socket:`n  enabled: true`n  interface: ""auto""`n  local_ip: ""auto""`n  local_port: $($script:TunnelPort)`n  gateway_mac: ""auto""`n  desync_method: ""split""`n  batch_size: 32`n  buffer_size: 2097152`n  coalesce_ms: 1`n  max_packet_size: 1400`n  randomize_ttl: true`n  min_ttl: 64`n  max_ttl: 128`n  fragment_first_packet: true`n  fragment_size: 40"
-    }
-    return $dpi
+    return "light_dpi_bypass:`n  enabled: true`n  sni_split: true`n  ttl_manipulation: false`n  segment_size: 1200`n  pacing_delay_ms: 2`n  jitter_range_ms: 1"
 }
 $Adv = "advanced:`n  tcp_nodelay: true`n  tcp_keepalive: 3`n  tcp_read_buffer: 32768`n  tcp_write_buffer: 32768`n  cleanup_interval: 1`n  session_timeout: 15`n  connection_timeout: 20`n  stream_timeout: 45`n  max_connections: 300`n  max_udp_flows: 150`n  udp_flow_timeout: 90`n  udp_buffer_size: 262144"
 
@@ -690,6 +685,22 @@ if (-not $DryRun) {
     foreach ($kh in $KharejServers) {
         $fip = $kh.IPs[0]
         if (-not $seen2.ContainsKey($fip)) { Install-On $kh.Name $fip $kh.Port $kh.User | Out-Null; $seen2[$fip] = $true }
+    }
+    Write-Host ""
+
+    # Stop any leftover DaggerConnect on ALL servers (from previous interrupted runs)
+    Write-Host "  ====== Cleanup Old ======" -Fore Cyan
+    foreach ($ir in $IranServers) {
+        $fip = $ir.IPs[0]
+        Write-Host "  [$($ir.Name)] stopping old DC..." -NoNewline
+        Invoke-Ssh $fip $ir.Port $ir.User 'systemctl stop DaggerConnect-server 2>/dev/null; pkill -9 -f DaggerConnect 2>/dev/null; true' 10 | Out-Null
+        Write-Host " OK" -Fore Green
+    }
+    foreach ($kh in $KharejServers) {
+        $fip = $kh.IPs[0]
+        Write-Host "  [$($kh.Name)] stopping old DC..." -NoNewline
+        Invoke-Ssh $fip $kh.Port $kh.User 'systemctl stop DaggerConnect-client 2>/dev/null; pkill -9 -f DaggerConnect 2>/dev/null; true' 10 | Out-Null
+        Write-Host " OK" -Fore Green
     }
     Write-Host ""
 }
